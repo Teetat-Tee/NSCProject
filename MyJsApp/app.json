@@ -4,7 +4,7 @@
     "slug": "osa-detect",
     "version": "1.0.0",
     "android": {
-      "package": "com.teetatsunawat.nsc"
+      "package": "com.tee.nsc"
     },
     "extra": {
       "eas": {
