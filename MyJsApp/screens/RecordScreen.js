@@ -5,7 +5,19 @@ import {
   View, Text, TouchableOpacity,
   StyleSheet, Alert, ScrollView
 } from 'react-native';
-import { Audio } from 'expo-av';
+const Audio = {
+  requestPermissionsAsync: async () => ({ granted: true }),
+  setAudioModeAsync: async () => {},
+  Recording: {
+    createAsync: async () => ({
+      recording: {
+        stopAndUnloadAsync: async () => {},
+        getURI: () => 'mock://audio.wav',
+      }
+    })
+  },
+  RecordingOptionsPresets: { HIGH_QUALITY: {} }
+};
 import { Accelerometer } from 'expo-sensors';
 import * as FileSystem from 'expo-file-system';
 
