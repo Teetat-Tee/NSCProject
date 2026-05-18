@@ -1,29 +1,16 @@
 {
   "expo": {
-    "name": "MyJsApp",
-    "slug": "MyJsApp",
+    "name": "OSA Detect",
+    "slug": "osa-detect",
     "version": "1.0.0",
-    "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
-    "ios": {
-      "supportsTablet": true
-    },
     "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+      "package": "com.yourname.osadetect"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "8efdb8a1-526e-4a4e-a04e-4df0df759424"
       }
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    }
+    "owner": "teetatsunawat"
   }
 }
