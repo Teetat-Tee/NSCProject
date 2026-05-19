@@ -3,17 +3,10 @@
     "name": "OSA Detect",
     "slug": "osa-detect",
     "version": "1.0.0",
+    "orientation": "portrait",
+    "assetBundlePatterns": ["assets/**"],
     "android": {
-      "package": "com.tee.nsc"
-    },
-    "assetBundlePatterns": [
-      "assets/**"
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "8efdb8a1-526e-4a4e-a04e-4df0df759424"
-      }
-    },
-    "owner": "teetatsunawat"
+      "package": "com.tee.osadetect"
+    }
   }
 }
