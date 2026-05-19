@@ -1,177 +1,252 @@
-// screens/ResultScreen.js
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView } from 'react-native';
 
 export default function ResultScreen({ route, navigation }) {
-  const { duration, events, chunkCount } = route.params;
+  const params = route?.params || {};
+  const isDemoMode = params.demo === true;
 
-  // ---- คำนวณ pseudo-AHI ----
-  const hours = duration / 3600;
+  // ถ้าเป็น demo ใช้ข้อมูลจำลอง
+  const duration = params.duration || 28800; // 8 ชม.
+  const events = params.events || [
+    { type: 'snore', msg: 'เสียงกรน 88%', time: '23:12:04' },
+    { type: 'apnea', msg: '⚠️ หยุดหายใจ 76%', time: '01:34:22' },
+    { type: 'snore', msg: 'เสียงกรน 91%', time: '02:11:08' },
+    { type: 'apnea', msg: '⚠️ หยุดหายใจ 82%', time: '04:05:17' },
+    { type: 'movement', msg: 'ขยับตัว', time: '04:47:33' },
+  ];
+
+  const hours = Math.max(duration / 3600, 0.1);
   const apneaCount = events.filter(e => e.type === 'apnea').length;
   const snoreCount = events.filter(e => e.type === 'snore').length;
   const moveCount  = events.filter(e => e.type === 'movement').length;
-  const ahi = hours > 0 ? (apneaCount / hours).toFixed(1) : 0;
+  const ahi = (apneaCount / hours).toFixed(1);
 
-  // ---- ระดับความเสี่ยง ----
-  function getRiskLevel(ahi) {
-    if (ahi < 5)  return { level: 'ปกติ',        color: '#22c55e', emoji: '✅', detail: 'ไม่พบความผิดปกติ' };
-    if (ahi < 15) return { level: 'เล็กน้อย',    color: '#f59e0b', emoji: '⚠️', detail: 'ควรปรับพฤติกรรมการนอน' };
-    if (ahi < 30) return { level: 'ปานกลาง',     color: '#f97316', emoji: '🔶', detail: 'ควรปรึกษาแพทย์' };
-    return          { level: 'รุนแรง',           color: '#ef4444', emoji: '🚨', detail: 'ควรพบแพทย์โดยด่วน' };
+  function getRisk(ahi) {
+    const v = Number(ahi);
+    if (v < 5)  return { label: 'ปกติ',     color: '#22c55e', score: Math.min(v*4, 15) };
+    if (v < 15) return { label: 'เล็กน้อย', color: '#f59e0b', score: 30 + v };
+    if (v < 30) return { label: 'ปานกลาง', color: '#f97316', score: 55 + v };
+    return              { label: 'รุนแรง',  color: '#ef4444', score: 90 };
   }
 
-  const risk = getRiskLevel(Number(ahi));
+  const risk = getRisk(ahi);
+
+  // กราฟ Snoring Level แบบง่าย (bar chart แนวตั้ง)
+  const hours_arr = ['23','0','1','2','3','4','5','6'];
+  const barData = hours_arr.map(h => {
+    const count = events.filter(e => {
+      const evHour = parseInt(e.time?.split(':')[0] || '0');
+      return evHour === parseInt(h);
+    }).length;
+    return count;
+  });
+  const maxBar = Math.max(...barData, 1);
 
   function formatDuration(sec) {
     const h = Math.floor(sec / 3600);
     const m = Math.floor((sec % 3600) / 60);
-    return `${h} ชม. ${m} นาที`;
+    return `${h}ชม. ${m}น.`;
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <SafeAreaView style={styles.safe}>
+      <ScrollView style={styles.container}>
 
-      {/* Risk Badge */}
-      <View style={[styles.riskCard, { borderColor: risk.color }]}>
-        <Text style={styles.riskEmoji}>{risk.emoji}</Text>
-        <Text style={styles.riskLevel}>ระดับ: {risk.level}</Text>
-        <Text style={[styles.ahiText, { color: risk.color }]}>
-          AHI = {ahi}
-        </Text>
-        <Text style={styles.ahiSub}>ครั้ง/ชั่วโมง</Text>
-        <Text style={styles.riskDetail}>{risk.detail}</Text>
-      </View>
+        {/* Header */}
+        <View style={styles.header}>
+          {navigation?.canGoBack?.() &&
+            <TouchableOpacity onPress={() => navigation.goBack()}>
+              <Text style={styles.back}>‹ กลับ</Text>
+            </TouchableOpacity>
+          }
+          <Text style={styles.title}>ผลลัพธ์</Text>
+          <Text style={styles.demo}>{isDemoMode ? 'ตัวอย่าง' : ''}</Text>
+        </View>
 
-      {/* สรุปตัวเลข */}
-      <View style={styles.statsRow}>
-        <StatBox label="เวลานอน"     value={formatDuration(duration)} />
-        <StatBox label="หยุดหายใจ"  value={`${apneaCount} ครั้ง`} color="#ef4444" />
-        <StatBox label="เสียงกรน"   value={`${snoreCount} ครั้ง`} color="#f59e0b" />
-        <StatBox label="ขยับตัว"    value={`${moveCount} ครั้ง`}  color="#60a5fa" />
-      </View>
+        {/* Bar Chart */}
+        <View style={styles.chartCard}>
+          <Text style={styles.cardTitle}>Snoring Level</Text>
+          <View style={styles.chart}>
+            {barData.map((val, i) => {
+              const hasApnea = events.some(e => {
+                const h = parseInt(e.time?.split(':')[0] || '0');
+                return h === parseInt(hours_arr[i]) && e.type === 'apnea';
+              });
+              return (
+                <View key={i} style={styles.barCol}>
+                  <View style={styles.barTrack}>
+                    <View style={[
+                      styles.bar,
+                      { height: `${Math.max((val/maxBar)*100, 5)}%` },
+                      hasApnea && { backgroundColor: '#ef4444' },
+                    ]} />
+                  </View>
+                  <Text style={styles.barLabel}>{hours_arr[i]}</Text>
+                </View>
+              );
+            })}
+          </View>
 
-      {/* Timeline events */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Timeline</Text>
-        {events.length === 0 ? (
-          <Text style={styles.noEvent}>ไม่มี event ที่ตรวจพบ</Text>
-        ) : (
-          events.slice().reverse().map((ev, i) => (
-            <View key={i} style={[
-              styles.eventRow,
-              ev.type === 'apnea'    && { borderLeftColor: '#ef4444' },
-              ev.type === 'snore'    && { borderLeftColor: '#f59e0b' },
-              ev.type === 'movement' && { borderLeftColor: '#60a5fa' },
-            ]}>
-              <Text style={styles.eventTime}>{ev.time}</Text>
-              <Text style={styles.eventMsg}>{ev.message}</Text>
+          {/* Legend */}
+          <View style={styles.legend}>
+            <View style={styles.legendItem}>
+              <View style={[styles.dot, { backgroundColor: '#1e3a5f' }]} />
+              <Text style={styles.legendText}>เงียบ</Text>
             </View>
-          ))
-        )}
-      </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.dot, { backgroundColor: '#38bdf8' }]} />
+              <Text style={styles.legendText}>กรน</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.dot, { backgroundColor: '#f59e0b' }]} />
+              <Text style={styles.legendText}>ดัง</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.dot, { backgroundColor: '#ef4444' }]} />
+              <Text style={styles.legendText}>หยุดหายใจ</Text>
+            </View>
+          </View>
+        </View>
 
-      {/* คำแนะนำ */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>คำแนะนำ</Text>
-        <Advice ahi={Number(ahi)} />
-      </View>
+        {/* Summary Row */}
+        <View style={styles.summaryRow}>
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryIcon}>⏰</Text>
+            <Text style={styles.summaryVal}>{formatDuration(duration)}</Text>
+            <Text style={styles.summaryLabel}>เวลานอน</Text>
+          </View>
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryIcon}>📳</Text>
+            <Text style={styles.summaryVal}>{formatDuration(duration * 0.3)}</Text>
+            <Text style={styles.summaryLabel}>เวลากรน 30%</Text>
+          </View>
 
-      {/* ปุ่มกลับ */}
-      <TouchableOpacity
-        style={styles.homeBtn}
-        onPress={() => navigation.navigate('Home')}
-      >
-        <Text style={styles.homeBtnText}>🏠 กลับหน้าหลัก</Text>
-      </TouchableOpacity>
+          {/* AHI Donut */}
+          <View style={styles.donut}>
+            <View style={[styles.donutRing, { borderColor: risk.color }]}>
+              <Text style={[styles.donutNum, { color: risk.color }]}>{ahi}</Text>
+            </View>
+            <Text style={styles.donutLabel}>คะแนน AHI</Text>
+          </View>
+        </View>
 
-    </ScrollView>
+        {/* Risk */}
+        <View style={[styles.riskBadge, { borderColor: risk.color }]}>
+          <Text style={[styles.riskText, { color: risk.color }]}>
+            ระดับ: {risk.label}
+          </Text>
+          <Text style={styles.riskSub}>
+            {Number(ahi) < 5
+              ? 'การนอนปกติ ไม่พบความผิดปกติ'
+              : Number(ahi) < 15
+              ? 'พบ OSA เล็กน้อย ควรปรับพฤติกรรม'
+              : Number(ahi) < 30
+              ? 'พบ OSA ปานกลาง ควรปรึกษาแพทย์'
+              : 'พบ OSA รุนแรง ควรพบแพทย์โดยด่วน'}
+          </Text>
+        </View>
+
+        {/* Stats */}
+        <View style={styles.statsRow}>
+          {[
+            { label: 'หยุดหายใจ', val: apneaCount, color: '#ef4444', icon: '⚠️' },
+            { label: 'เสียงกรน',  val: snoreCount,  color: '#f59e0b', icon: '🔊' },
+            { label: 'ขยับตัว',   val: moveCount,   color: '#38bdf8', icon: '📳' },
+          ].map((s, i) => (
+            <View key={i} style={styles.statBox}>
+              <Text style={styles.statIcon}>{s.icon}</Text>
+              <Text style={[styles.statVal, { color: s.color }]}>{s.val}</Text>
+              <Text style={styles.statLabel}>{s.label}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Timeline */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Timeline</Text>
+          {events.map((ev, i) => (
+            <View key={i} style={[
+              styles.evRow,
+              ev.type === 'apnea' && { borderLeftColor: '#ef4444' },
+              ev.type === 'snore' && { borderLeftColor: '#f59e0b' },
+              ev.type === 'movement' && { borderLeftColor: '#38bdf8' },
+            ]}>
+              <Text style={styles.evTime}>{ev.time}</Text>
+              <Text style={styles.evMsg}>{ev.msg}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Disclaimer */}
+        <Text style={styles.disclaimer}>
+          * ผลนี้เป็นการคัดกรองเบื้องต้นด้วย AI เท่านั้น ไม่ใช่การวินิจฉัยทางการแพทย์
+        </Text>
+
+        <View style={{ height: 40 }} />
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
-// ---- Component ย่อย ----
-function StatBox({ label, value, color = '#e0e0ff' }) {
-  return (
-    <View style={styles.statBox}>
-      <Text style={[styles.statValue, { color }]}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function Advice({ ahi }) {
-  const tips = ahi < 5 ? [
-    'การนอนของคุณอยู่ในเกณฑ์ปกติ',
-    'นอนหลับให้ครบ 7–8 ชั่วโมงต่อคืน',
-    'หลีกเลี่ยงแอลกอฮอล์ก่อนนอน',
-  ] : ahi < 15 ? [
-    'ลองนอนตะแคงแทนนอนหงาย',
-    'ลดน้ำหนักถ้า BMI เกิน 25',
-    'หลีกเลี่ยงยาที่ทำให้ง่วง',
-    'ติดตามผลต่อเนื่องทุกสัปดาห์',
-  ] : [
-    'ควรพบแพทย์เพื่อตรวจ PSG จริง',
-    'อาจต้องใช้เครื่อง CPAP',
-    'ห้ามขับรถระยะไกลเพียงลำพัง',
-    'แจ้งคนในครอบครัวให้รับทราบ',
-  ];
-
-  return (
-    <View>
-      {tips.map((tip, i) => (
-        <Text key={i} style={styles.tip}>• {tip}</Text>
-      ))}
-      <Text style={styles.disclaimer}>
-        * ผลนี้เป็นการคัดกรองเบื้องต้นด้วย AI เท่านั้น{'\n'}
-        ไม่สามารถใช้แทนการวินิจฉัยทางการแพทย์ได้
-      </Text>
-    </View>
-  );
-}
-
-// ---- Styles ----
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1a1a2e', padding: 20 },
-  riskCard: {
-    alignItems: 'center', borderWidth: 2,
-    borderRadius: 20, padding: 24, marginBottom: 20,
-    backgroundColor: '#16213e',
-  },
-  riskEmoji: { fontSize: 48, marginBottom: 8 },
-  riskLevel: { color: '#e0e0ff', fontSize: 18, fontWeight: 'bold' },
-  ahiText: { fontSize: 52, fontWeight: 'bold', marginVertical: 4 },
-  ahiSub: { color: '#9090bb', fontSize: 13 },
-  riskDetail: { color: '#9090bb', marginTop: 8, fontSize: 14 },
-  statsRow: {
-    flexDirection: 'row', flexWrap: 'wrap',
-    justifyContent: 'space-between', marginBottom: 20,
-  },
-  statBox: {
-    width: '48%', backgroundColor: '#16213e',
-    borderRadius: 12, padding: 14,
-    alignItems: 'center', marginBottom: 10,
-  },
-  statValue: { fontSize: 18, fontWeight: 'bold' },
-  statLabel: { color: '#9090bb', fontSize: 12, marginTop: 4 },
-  section: {
-    backgroundColor: '#16213e', borderRadius: 12,
-    padding: 16, marginBottom: 16,
-  },
-  sectionTitle: { color: '#e0e0ff', fontWeight: 'bold', fontSize: 16, marginBottom: 12 },
-  noEvent: { color: '#6060aa', fontStyle: 'italic' },
-  eventRow: {
-    borderLeftWidth: 3, paddingLeft: 10,
-    paddingVertical: 6, marginBottom: 6,
+  safe: { flex: 1, backgroundColor: '#0f172a' },
+  container: { flex: 1, padding: 16 },
+  header: {
     flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginBottom: 16,
   },
-  eventTime: { color: '#6060aa', fontSize: 12 },
-  eventMsg: { color: '#e0e0ff', fontSize: 13 },
-  tip: { color: '#9090bb', fontSize: 14, marginBottom: 8, lineHeight: 22 },
-  disclaimer: {
-    color: '#6060aa', fontSize: 12,
-    marginTop: 12, lineHeight: 18, fontStyle: 'italic',
+  back: { color: '#38bdf8', fontSize: 18 },
+  title: { color: '#f1f5f9', fontSize: 20, fontWeight: 'bold' },
+  demo: { color: '#475569', fontSize: 13 },
+  chartCard: {
+    backgroundColor: '#1e293b', borderRadius: 16, padding: 16, marginBottom: 12,
   },
-  homeBtn: {
-    backgroundColor: '#4f46e5', borderRadius: 50,
-    padding: 18, alignItems: 'center', marginBottom: 40,
+  cardTitle: { color: '#94a3b8', fontSize: 13, marginBottom: 12 },
+  chart: { flexDirection: 'row', height: 120, alignItems: 'flex-end', gap: 4 },
+  barCol: { flex: 1, alignItems: 'center' },
+  barTrack: { flex: 1, width: '80%', justifyContent: 'flex-end' },
+  bar: { width: '100%', backgroundColor: '#38bdf8', borderRadius: 3, minHeight: 4 },
+  barLabel: { color: '#475569', fontSize: 10, marginTop: 4 },
+  legend: { flexDirection: 'row', gap: 12, marginTop: 12, flexWrap: 'wrap' },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  dot: { width: 10, height: 10, borderRadius: 5 },
+  legendText: { color: '#64748b', fontSize: 11 },
+  summaryRow: {
+    flexDirection: 'row', backgroundColor: '#1e293b',
+    borderRadius: 16, padding: 16, marginBottom: 12,
+    alignItems: 'center', justifyContent: 'space-between',
   },
-  homeBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  summaryItem: { alignItems: 'center', flex: 1 },
+  summaryIcon: { fontSize: 22, marginBottom: 4 },
+  summaryVal: { color: '#f1f5f9', fontSize: 13, fontWeight: '600' },
+  summaryLabel: { color: '#64748b', fontSize: 11 },
+  donut: { alignItems: 'center', flex: 1 },
+  donutRing: {
+    width: 70, height: 70, borderRadius: 35,
+    borderWidth: 5, alignItems: 'center', justifyContent: 'center',
+  },
+  donutNum: { fontSize: 22, fontWeight: 'bold' },
+  donutLabel: { color: '#64748b', fontSize: 11, marginTop: 4 },
+  riskBadge: {
+    borderWidth: 1.5, borderRadius: 12, padding: 14,
+    marginBottom: 12, backgroundColor: '#1e293b',
+  },
+  riskText: { fontSize: 16, fontWeight: 'bold', marginBottom: 4 },
+  riskSub: { color: '#94a3b8', fontSize: 13 },
+  statsRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  statBox: {
+    flex: 1, backgroundColor: '#1e293b', borderRadius: 12,
+    padding: 12, alignItems: 'center',
+  },
+  statIcon: { fontSize: 20, marginBottom: 4 },
+  statVal: { fontSize: 22, fontWeight: 'bold' },
+  statLabel: { color: '#64748b', fontSize: 11, marginTop: 2 },
+  card: { backgroundColor: '#1e293b', borderRadius: 16, padding: 16, marginBottom: 12 },
+  evRow: {
+    borderLeftWidth: 3, borderLeftColor: '#475569',
+    paddingLeft: 10, paddingVertical: 6,
+    flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4,
+  },
+  evTime: { color: '#64748b', fontSize: 12 },
+  evMsg: { color: '#e2e8f0', fontSize: 13 },
+  disclaimer: { color: '#475569', fontSize: 11, textAlign: 'center', fontStyle: 'italic' },
 });
