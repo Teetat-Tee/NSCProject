@@ -1,9 +1,13 @@
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Switch } from 'react-native';
-import { useState } from 'react';
+import { useState, useContext } from 'react'; // นำเข้า useContext
+import { AuthContext } from '../AuthContext';
 
 export default function SettingsScreen() {
   const [smartAlarm, setSmartAlarm] = useState(true);
   const [sensitivity, setSensitivity] = useState('Medium');
+  
+  // เรียกใช้งานข้อมูลผู้ใช้และฟังก์ชันออกจากระบบจาก Context
+  const { userData, logout } = useContext(AuthContext);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -16,9 +20,20 @@ export default function SettingsScreen() {
         <View style={styles.profileCard}>
           <Text style={styles.profileEmoji}>😴</Text>
           <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>Sleep Tracker User</Text>
-            <Text style={styles.profileBadge}>Premium Member</Text>
+            {/* ดึงชื่อและนามสกุลมาแสดง */}
+            <Text style={styles.profileName}>
+              {userData?.firstName ? `${userData.firstName} ${userData.lastName}` : 'Sleep Tracker User'}
+            </Text>
+            {/* แสดงอายุและเพศ */}
+            <Text style={styles.profileBadge}>
+              {userData?.age ? `${userData.age} ปี` : 'Member'} {userData?.gender ? `• ${userData.gender}` : ''}
+            </Text>
+            {/* แสดงโรคประจำตัว (ถ้ามี) */}
+            {userData?.conditions ? (
+               <Text style={styles.profileConditions}>โรคประจำตัว: {userData.conditions}</Text>
+            ) : null}
           </View>
+          
           <View style={styles.profileStats}>
             <View style={styles.statItem}>
               <Text style={styles.statNum}>0</Text>
@@ -90,7 +105,7 @@ export default function SettingsScreen() {
           <TouchableOpacity style={styles.row}>
             <View style={styles.rowIcon}><Text>👤</Text></View>
             <View style={styles.rowContent}>
-              <Text style={styles.rowLabel}>Profile</Text>
+              <Text style={styles.rowLabel}>Profile Details</Text>
             </View>
             <Text style={styles.arrow}>›</Text>
           </TouchableOpacity>
@@ -104,6 +119,16 @@ export default function SettingsScreen() {
               <Text style={styles.rowSub}>Version 1.0</Text>
             </View>
             <Text style={styles.arrow}>›</Text>
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          {/* ปุ่ม Log Out */}
+          <TouchableOpacity style={styles.row} onPress={logout}>
+            <View style={[styles.rowIcon, { backgroundColor: '#fee2e2' }]}><Text>🚪</Text></View>
+            <View style={styles.rowContent}>
+              <Text style={[styles.rowLabel, { color: '#ef4444', fontWeight: 'bold' }]}>Log Out</Text>
+            </View>
           </TouchableOpacity>
 
         </View>
@@ -131,8 +156,9 @@ const styles = StyleSheet.create({
   profileEmoji: { fontSize: 40, marginBottom: 8 },
   profileInfo: { marginBottom: 16 },
   profileName: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  profileBadge: { color: '#c7d2fe', fontSize: 13 },
-  profileStats: { flexDirection: 'row', justifyContent: 'space-around' },
+  profileBadge: { color: '#c7d2fe', fontSize: 13, marginTop: 2 },
+  profileConditions: { color: '#e0e7ff', fontSize: 12, marginTop: 4, fontStyle: 'italic' }, // สไตล์สำหรับโรคประจำตัว
+  profileStats: { flexDirection: 'row', justifyContent: 'space-around', marginTop: 10 },
   statItem: { alignItems: 'center' },
   statNum: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
   statLbl: { color: '#c7d2fe', fontSize: 12 },
@@ -149,5 +175,5 @@ const styles = StyleSheet.create({
   rowSub: { color: '#64748b', fontSize: 13, marginTop: 2 },
   arrow: { color: '#475569', fontSize: 22 },
   divider: { height: 1, backgroundColor: '#0f172a', marginLeft: 64 },
-  disclaimer: { color: '#475569', fontSize: 11, textAlign: 'center', fontStyle: 'italic' },
+  disclaimer: { color: '#475569', fontSize: 11, textAlign: 'center', fontStyle: 'italic', marginTop: 10 },
 });
