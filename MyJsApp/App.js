@@ -11,6 +11,7 @@ import SettingsScreen from './screens/SettingsScreen';
 import { AuthProvider, AuthContext } from './AuthContext';
 import LoginScreen from './screens/LoginScreen';
 import SignUpScreen from './screens/SignUpScreen';
+import HospitalScreen from './screens/HospitalScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -80,6 +81,14 @@ function AppNavigator() {
             options={{
               tabBarLabel: 'Settings',
               tabBarIcon: () => <Text style={{ fontSize: 20 }}>⚙️</Text>
+            }}
+          />
+            <Tab.Screen
+            name="โรงพยาบาล"
+            component={HospitalScreen}
+            options={{
+              tabBarLabel: 'Hospital',
+              tabBarIcon: () => <Text style={{ fontSize: 20 }}>🏥</Text>
             }}
           />
         </Tab.Navigator>
