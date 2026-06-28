@@ -139,8 +139,21 @@ export default function ResultScreen({ route, navigation }) {
           ))}
         </View>
 
+        {/* 🟢 ปุ่ม Export ที่เพิ่มเข้ามา 🟢 */}
+        <TouchableOpacity 
+          style={styles.exportBtn}
+          onPress={() => navigation.navigate('ResultExport', {
+            riskLevel: risk.label,                // ดึงค่าความเสี่ยงที่คำนวณไว้ด้านบนมาใช้
+            ahiValue: ahi,                        // ดึงค่า AHI จริง
+            sleepDuration: formatDuration(duration), // ดึงค่าเวลาจริง
+            riskColor: risk.color                 // ดึงสีตามระดับความเสี่ยง
+          })}
+        >
+          <Text style={styles.exportBtnText}>📤 ส่งออกรายงาน (Export / Share)</Text>
+        </TouchableOpacity>
+
         <Text style={styles.disclaimer}>
-          * ผลนี้เป็นการคัดกรองเบื้องต้นด้วย AI เท่านั้น ไม่ใช่การวินิจฉัยทางการแพทย์
+          * ผลนี้เป็นการคัดกรองเบื้องต้นด้วยเทคโนโลยีการประมวลผลสัญญาณ เท่านั้น ไม่ใช่การวินิจฉัยทางการแพทย์
         </Text>
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -185,5 +198,21 @@ const styles = StyleSheet.create({
   evRow: { borderLeftWidth: 3, borderLeftColor: '#475569', paddingLeft: 10, paddingVertical: 6, flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   evTime: { color: '#64748b', fontSize: 12 },
   evMsg: { color: '#e2e8f0', fontSize: 13 },
+  
+  // 🟢 สไตล์ของปุ่ม Export
+  exportBtn: { 
+    backgroundColor: '#38bdf8', 
+    paddingVertical: 14, 
+    borderRadius: 12, 
+    alignItems: 'center', 
+    marginTop: 8, 
+    marginBottom: 16 
+  },
+  exportBtnText: { 
+    color: '#0f172a', 
+    fontSize: 15, 
+    fontWeight: 'bold' 
+  },
+  
   disclaimer: { color: '#475569', fontSize: 11, textAlign: 'center', fontStyle: 'italic' },
 });

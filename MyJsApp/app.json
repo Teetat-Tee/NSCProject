@@ -4,9 +4,14 @@
     "slug": "osa-detect",
     "version": "1.0.0",
     "orientation": "portrait",
-    "assetBundlePatterns": ["assets/**"],
+    "assetBundlePatterns": [
+      "assets/**"
+    ],
     "android": {
       "package": "com.tee.osadetect"
-    }
+    },
+    "plugins": [
+      "expo-sharing"
+    ]
   }
 }

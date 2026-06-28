@@ -12,6 +12,7 @@ import { AuthProvider, AuthContext } from './AuthContext';
 import LoginScreen from './screens/LoginScreen';
 import SignUpScreen from './screens/SignUpScreen';
 import HospitalScreen from './screens/HospitalScreen';
+import ResultExportScreen from './screens/ResultExportScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -31,6 +32,7 @@ function HomeStack() {
       <Stack.Screen name="Record" component={RecordScreen} />
       <Stack.Screen name="Survey" component={SurveyScreen} />
       <Stack.Screen name="Result" component={ResultScreen} />
+      <Stack.Screen name="ResultExport" component={ResultExportScreen} />
     </Stack.Navigator>
   );
 }
