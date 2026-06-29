@@ -16,7 +16,8 @@ import ResultExportScreen from './screens/ResultExportScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
-// --- 1. Auth Stack (หน้าก่อนเข้าแอป) ---
+
+// --- Auth Stack ---
 function AuthStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -25,6 +26,8 @@ function AuthStack() {
     </Stack.Navigator>
   );
 }
+
+// --- Home Stack (Record flow: Home → Record → Survey → Result → ResultExport) ---
 function HomeStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -36,13 +39,27 @@ function HomeStack() {
     </Stack.Navigator>
   );
 }
-// --- 3. Main App (ตัวจัดการ Navigation หลัก) ---
+
+// --- FIX: Summary Stack so ResultExport is reachable from the Summary tab ---
+function SummaryStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen
+        name="SummaryMain"
+        component={ResultScreen}
+        initialParams={{ demo: true }}
+      />
+      <Stack.Screen name="ResultExport" component={ResultExportScreen} />
+    </Stack.Navigator>
+  );
+}
+
+// --- Main App Navigator ---
 function AppNavigator() {
   const { isLoggedIn } = useContext(AuthContext);
 
   return (
     <NavigationContainer>
-      {/* ถ้าล็อกอินแล้วโชว์ Tab, ถ้ายังไม่ล็อกอินโชว์หน้า Login/SignUp */}
       {isLoggedIn ? (
         <Tab.Navigator
           screenOptions={{
@@ -52,45 +69,43 @@ function AppNavigator() {
             tabBarInactiveTintColor: '#475569',
           }}
         >
+          {/* Home tab (contains Record flow inside its stack) */}
           <Tab.Screen
             name="Home"
             component={HomeStack}
             options={{
               tabBarLabel: 'Home',
-              tabBarIcon: () => <Text style={{ fontSize: 20 }}>🏠</Text>
+              tabBarIcon: () => <Text style={{ fontSize: 20 }}>🏠</Text>,
             }}
           />
-          <Tab.Screen
-            name="บันทึก"
-            component={RecordScreen}
-            options={{
-              tabBarLabel: 'Record',
-              tabBarIcon: () => <Text style={{ fontSize: 20 }}>🎙️</Text>
-            }}
-          />
+
+          {/* REMOVED: บันทึก/Record tab */}
+
+          {/* Summary tab — now wrapped in SummaryStack so export works */}
           <Tab.Screen
             name="Summary"
-            component={ResultScreen}
+            component={SummaryStack}
             options={{
               tabBarLabel: 'Summary',
-              tabBarIcon: () => <Text style={{ fontSize: 20 }}>📊</Text>
+              tabBarIcon: () => <Text style={{ fontSize: 20 }}>📊</Text>,
             }}
-            initialParams={{ demo: true }}
           />
+
           <Tab.Screen
             name="Settings"
             component={SettingsScreen}
             options={{
               tabBarLabel: 'Settings',
-              tabBarIcon: () => <Text style={{ fontSize: 20 }}>⚙️</Text>
+              tabBarIcon: () => <Text style={{ fontSize: 20 }}>⚙️</Text>,
             }}
           />
-            <Tab.Screen
+
+          <Tab.Screen
             name="โรงพยาบาล"
             component={HospitalScreen}
             options={{
               tabBarLabel: 'Hospital',
-              tabBarIcon: () => <Text style={{ fontSize: 20 }}>🏥</Text>
+              tabBarIcon: () => <Text style={{ fontSize: 20 }}>🏥</Text>,
             }}
           />
         </Tab.Navigator>
@@ -101,7 +116,6 @@ function AppNavigator() {
   );
 }
 
-// หุ้ม App ด้วย AuthProvider
 export default function App() {
   return (
     <AuthProvider>

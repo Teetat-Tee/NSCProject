@@ -42,7 +42,6 @@ export default function ResultScreen({ route, navigation }) {
 
         <View style={styles.header}>
           <Text style={styles.title}>ผลลัพธ์</Text>
-          <Text style={styles.demo}>{isDemoMode ? 'ตัวอย่าง' : ''}</Text>
         </View>
 
         {/* Bar Chart */}
@@ -139,17 +138,20 @@ export default function ResultScreen({ route, navigation }) {
           ))}
         </View>
 
-        {/* 🟢 ปุ่ม Export ที่เพิ่มเข้ามา 🟢 */}
+        {/* 🟢 อัปเดตปุ่ม Export ส่งข้อมูลไปให้ครบถ้วน 🟢 */}
         <TouchableOpacity 
           style={styles.exportBtn}
           onPress={() => navigation.navigate('ResultExport', {
-            riskLevel: risk.label,                // ดึงค่าความเสี่ยงที่คำนวณไว้ด้านบนมาใช้
-            ahiValue: ahi,                        // ดึงค่า AHI จริง
-            sleepDuration: formatDuration(duration), // ดึงค่าเวลาจริง
-            riskColor: risk.color                 // ดึงสีตามระดับความเสี่ยง
+            riskLevel: risk.label,
+            ahiValue: ahi,
+            sleepDuration: formatDuration(duration),
+            riskColor: risk.color,
+            apneaCount: apneaCount, // ส่งจำนวนครั้งที่หยุดหายใจ
+            snoreCount: snoreCount, // ส่งจำนวนครั้งที่กรน
+            events: events          // ส่งข้อมูลไทม์ไลน์ทั้งหมด
           })}
         >
-          <Text style={styles.exportBtnText}>📤 ส่งออกรายงาน (Export / Share)</Text>
+          <Text style={styles.exportBtnText}>📄 สร้างรายงาน PDF (Detailed Report)</Text>
         </TouchableOpacity>
 
         <Text style={styles.disclaimer}>
