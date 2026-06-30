@@ -8,11 +8,33 @@
       "assets/**"
     ],
     "android": {
-      "package": "com.tee.osadetect"
+      "package": "com.tee.osadetect",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
     },
     "plugins": [
       "expo-sharing",
-      ["expo-audio", {"microphonePermission": "อนุญาตให้ OSA Detect เข้าถึงไมโครโฟนเพื่อบันทึกเสียงขณะนอนหลับ"}]
-    ]
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "อนุญาตให้ OSA Detect เข้าถึงไมโครโฟนเพื่อบันทึกเสียงขณะนอนหลับ"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8efdb8a1-526e-4a4e-a04e-4df0df759424"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.tee.osadetect",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
   }
 }
