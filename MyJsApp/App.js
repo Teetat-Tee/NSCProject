@@ -2,7 +2,7 @@ import React, { useContext } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
-import { Text } from 'react-native';
+import { Text, View, ActivityIndicator } from 'react-native';
 import HomeScreen from './screens/HomeScreen';
 import RecordScreen from './screens/RecordScreen';
 import ResultScreen from './screens/ResultScreen';
@@ -13,6 +13,9 @@ import LoginScreen from './screens/LoginScreen';
 import SignUpScreen from './screens/SignUpScreen';
 import HospitalScreen from './screens/HospitalScreen';
 import ResultExportScreen from './screens/ResultExportScreen';
+import AccuracyTestScreen from './screens/AccuracyTestScreen';
+import SummaryScreen from './screens/SummaryScreen';
+import { colors, shadow } from './utils/theme';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -36,19 +39,16 @@ function HomeStack() {
       <Stack.Screen name="Survey" component={SurveyScreen} />
       <Stack.Screen name="Result" component={ResultScreen} />
       <Stack.Screen name="ResultExport" component={ResultExportScreen} />
+      <Stack.Screen name="AccuracyTest" component={AccuracyTestScreen} />
     </Stack.Navigator>
   );
 }
 
-// --- FIX: Summary Stack so ResultExport is reachable from the Summary tab ---
+// --- Summary Stack: หน้าสรุปผลใหม่ (รองรับ daily/monthly history) ---
 function SummaryStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen
-        name="SummaryMain"
-        component={ResultScreen}
-        initialParams={{ demo: true }}
-      />
+      <Stack.Screen name="SummaryMain" component={SummaryScreen} />
       <Stack.Screen name="ResultExport" component={ResultExportScreen} />
     </Stack.Navigator>
   );
@@ -56,17 +56,35 @@ function SummaryStack() {
 
 // --- Main App Navigator ---
 function AppNavigator() {
-  const { isLoggedIn } = useContext(AuthContext);
+  const { isLoggedIn, authLoading } = useContext(AuthContext);
+
+  if (authLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator color={colors.primary} size="large" />
+      </View>
+    );
+  }
 
   return (
     <NavigationContainer>
       {isLoggedIn ? (
         <Tab.Navigator
+          id="RootTabs"
           screenOptions={{
             headerShown: false,
-            tabBarStyle: { backgroundColor: '#0f172a', borderTopColor: '#1e293b' },
-            tabBarActiveTintColor: '#38bdf8',
-            tabBarInactiveTintColor: '#475569',
+            tabBarStyle: {
+              backgroundColor: colors.surface,
+              borderTopColor: colors.border,
+              borderTopWidth: 1,
+              height: 64,
+              paddingBottom: 8,
+              paddingTop: 8,
+              ...shadow.card,
+            },
+            tabBarActiveTintColor: colors.primary,
+            tabBarInactiveTintColor: colors.inkFaint,
+            tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
           }}
         >
           {/* Home tab (contains Record flow inside its stack) */}

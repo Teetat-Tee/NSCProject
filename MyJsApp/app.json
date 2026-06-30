@@ -11,7 +11,8 @@
       "package": "com.tee.osadetect"
     },
     "plugins": [
-      "expo-sharing"
+      "expo-sharing",
+      ["expo-audio", {"microphonePermission": "อนุญาตให้ OSA Detect เข้าถึงไมโครโฟนเพื่อบันทึกเสียงขณะนอนหลับ"}]
     ]
   }
 }

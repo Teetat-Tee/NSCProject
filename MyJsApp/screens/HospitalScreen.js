@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Linking } from 'react-native';
+import { colors, radius, shadow } from '../utils/theme';
 
 const HOSPITALS = [
   {
@@ -9,7 +10,7 @@ const HOSPITALS = [
     phone: '053-936-150',
     hours: 'เปิด 24 ชั่วโมง',
     note: 'โรงพยาบาลรัฐ มีแผนกตรวจการนอนหลับ',
-    color: '#22c55e',
+    color: colors.riskNormal,
     emoji: '🏥',
   },
   {
@@ -20,7 +21,7 @@ const HOSPITALS = [
     phone: '052-004-699',
     hours: 'เปิด 24 ชั่วโมง',
     note: 'โรงพยาบาลเอกชน บริการครบวงจร',
-    color: '#38bdf8',
+    color: colors.primary,
     emoji: '🏨',
   },
   {
@@ -31,7 +32,7 @@ const HOSPITALS = [
     phone: '052-089-888',
     hours: 'เปิด 24 ชั่วโมง',
     note: 'มีแผนก ENT เชี่ยวชาญด้านการนอนหลับ',
-    color: '#f59e0b',
+    color: colors.riskMild,
     emoji: '🏦',
   },
   {
@@ -42,7 +43,7 @@ const HOSPITALS = [
     phone: '052-011-999',
     hours: 'เปิด 24 ชั่วโมง',
     note: 'บริการตรวจสุขภาพครบวงจร',
-    color: '#a78bfa',
+    color: '#9D7FC4',
     emoji: '🏣',
   },
   {
@@ -53,7 +54,7 @@ const HOSPITALS = [
     phone: '053-270-145',
     hours: 'เปิด 24 ชั่วโมง',
     note: 'โรงพยาบาลเอกชนขนาดกลาง',
-    color: '#f97316',
+    color: colors.riskModerate,
     emoji: '🏪',
   },
 ];
@@ -70,12 +71,11 @@ export default function HospitalScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView style={styles.container}>
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
 
         <Text style={styles.title}>โรงพยาบาลใกล้เคียง</Text>
         <Text style={styles.sub}>เชียงใหม่ — แนะนำสำหรับตรวจ OSA</Text>
 
-        {/* คำแนะนำ */}
         <View style={styles.tipBox}>
           <Text style={styles.tipText}>
             💡 หากผล AHI ≥ 15 ควรพบแพทย์เพื่อตรวจ PSG จริงที่โรงพยาบาล
@@ -83,37 +83,35 @@ export default function HospitalScreen() {
         </View>
 
         {HOSPITALS.map((h, i) => (
-          <View key={i} style={[styles.card, { borderLeftColor: h.color }]}>
+          <View key={i} style={styles.card}>
+            <View style={[styles.cardAccent, { backgroundColor: h.color }]} />
 
-            {/* Header */}
             <View style={styles.cardHeader}>
-              <Text style={styles.cardEmoji}>{h.emoji}</Text>
+              <View style={[styles.emojiBox, { backgroundColor: h.color + '22' }]}>
+                <Text style={styles.cardEmoji}>{h.emoji}</Text>
+              </View>
               <View style={styles.cardTitleBox}>
                 <Text style={styles.cardName}>{h.name}</Text>
-                <View style={[styles.typeBadge, { backgroundColor: h.color + '30' }]}>
+                <View style={[styles.typeBadge, { backgroundColor: h.color + '22' }]}>
                   <Text style={[styles.typeText, { color: h.color }]}>{h.type}</Text>
                 </View>
               </View>
             </View>
 
-            {/* Info */}
             <Text style={styles.address}>📍 {h.address}</Text>
             <Text style={styles.hours}>🕐 {h.hours}</Text>
             <Text style={styles.note}>ℹ️ {h.note}</Text>
 
-            {/* Buttons */}
             <View style={styles.btnRow}>
               <TouchableOpacity
                 style={[styles.callBtn, { backgroundColor: h.color }]}
+                activeOpacity={0.85}
                 onPress={() => callHospital(h.phone)}
               >
                 <Text style={styles.callBtnText}>📞 {h.phone}</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.mapBtn}
-                onPress={() => openMap(h.nameEn)}
-              >
+              <TouchableOpacity style={styles.mapBtn} activeOpacity={0.7} onPress={() => openMap(h.nameEn)}>
                 <Text style={styles.mapBtnText}>🗺️ แผนที่</Text>
               </TouchableOpacity>
             </View>
@@ -131,38 +129,46 @@ export default function HospitalScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#0f172a' },
+  safe: { flex: 1, backgroundColor: colors.bg },
   container: { flex: 1, padding: 20 },
-  title: { color: '#f1f5f9', fontSize: 24, fontWeight: 'bold' },
-  sub: { color: '#64748b', fontSize: 14, marginBottom: 16 },
+  title: { color: colors.ink, fontSize: 25, fontWeight: '700' },
+  sub: { color: colors.inkMuted, fontSize: 14, marginBottom: 18 },
+
   tipBox: {
-    backgroundColor: '#1e3a2a', borderRadius: 12,
-    padding: 14, marginBottom: 20, borderLeftWidth: 3, borderLeftColor: '#22c55e',
+    backgroundColor: colors.riskNormalSoft, borderRadius: radius.md,
+    padding: 15, marginBottom: 20, borderLeftWidth: 3, borderLeftColor: colors.riskNormal,
   },
-  tipText: { color: '#86efac', fontSize: 13, lineHeight: 20 },
+  tipText: { color: colors.riskNormal, fontSize: 13, lineHeight: 20, fontWeight: '500' },
+
   card: {
-    backgroundColor: '#1e293b', borderRadius: 16,
-    padding: 16, marginBottom: 14, borderLeftWidth: 4,
+    backgroundColor: colors.surface, borderRadius: radius.lg,
+    padding: 18, marginBottom: 14, overflow: 'hidden', ...shadow.card,
   },
-  cardHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
-  cardEmoji: { fontSize: 32, marginRight: 12 },
+  cardAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4 },
+
+  cardHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12 },
+  emojiBox: {
+    width: 48, height: 48, borderRadius: radius.md,
+    alignItems: 'center', justifyContent: 'center', marginRight: 12,
+  },
+  cardEmoji: { fontSize: 24 },
   cardTitleBox: { flex: 1 },
-  cardName: { color: '#f1f5f9', fontSize: 15, fontWeight: 'bold', marginBottom: 4 },
-  typeBadge: { alignSelf: 'flex-start', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 },
-  typeText: { fontSize: 11, fontWeight: '600' },
-  address: { color: '#94a3b8', fontSize: 13, marginBottom: 4 },
-  hours: { color: '#94a3b8', fontSize: 13, marginBottom: 4 },
-  note: { color: '#64748b', fontSize: 12, marginBottom: 12 },
-  btnRow: { flexDirection: 'row', gap: 8 },
-  callBtn: {
-    flex: 1, borderRadius: 10,
-    padding: 12, alignItems: 'center',
-  },
-  callBtnText: { color: '#0f172a', fontWeight: 'bold', fontSize: 13 },
+  cardName: { color: colors.ink, fontSize: 15, fontWeight: '700', marginBottom: 6 },
+  typeBadge: { alignSelf: 'flex-start', borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 3 },
+  typeText: { fontSize: 11, fontWeight: '700' },
+
+  address: { color: colors.inkMuted, fontSize: 13, marginBottom: 5 },
+  hours: { color: colors.inkMuted, fontSize: 13, marginBottom: 5 },
+  note: { color: colors.inkFaint, fontSize: 12, marginBottom: 14 },
+
+  btnRow: { flexDirection: 'row', gap: 10 },
+  callBtn: { flex: 1, borderRadius: radius.md, padding: 13, alignItems: 'center' },
+  callBtnText: { color: colors.onPrimary, fontWeight: '700', fontSize: 13 },
   mapBtn: {
-    backgroundColor: '#334155', borderRadius: 10,
-    padding: 12, alignItems: 'center', paddingHorizontal: 16,
+    backgroundColor: colors.surfaceMuted, borderRadius: radius.md,
+    padding: 13, alignItems: 'center', paddingHorizontal: 18,
   },
-  mapBtnText: { color: '#f1f5f9', fontSize: 13 },
-  disclaimer: { color: '#475569', fontSize: 11, textAlign: 'center', fontStyle: 'italic' },
+  mapBtnText: { color: colors.ink, fontSize: 13, fontWeight: '600' },
+
+  disclaimer: { color: colors.inkFaint, fontSize: 11, textAlign: 'center', fontStyle: 'italic' },
 });

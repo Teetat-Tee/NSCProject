@@ -1,5 +1,7 @@
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useState } from 'react';
+import { saveSession } from '../utils/sessionStorage';
+import { colors, radius, shadow } from '../utils/theme';
 
 const QUESTIONS = [
   {
@@ -56,36 +58,62 @@ const QUESTIONS = [
 
 export default function SurveyScreen({ route, navigation }) {
   const [answers, setAnswers] = useState({});
+  const [submitting, setSubmitting] = useState(false);
   const recordData = route?.params || {};
 
   function selectAnswer(questionId, option) {
     setAnswers(prev => ({ ...prev, [questionId]: option }));
   }
 
-  function submit() {
-    const totalScore = Object.values(answers).reduce((sum, a) => sum + a.score, 0);
-    const maxScore = QUESTIONS.length * 3;
-    const wellnessPercent = Math.round((totalScore / maxScore) * 100);
+  async function submit() {
+    if (submitting) return;
+    setSubmitting(true);
 
-    navigation.navigate('Result', {
-      ...recordData,
-      survey: { answers, wellnessPercent },
-    });
+    try {
+      const totalScore = Object.values(answers).reduce((sum, a) => sum + a.score, 0);
+      const maxScore = QUESTIONS.length * 3;
+      const wellnessPercent = Math.round((totalScore / maxScore) * 100);
+      const survey = { answers, wellnessPercent };
+
+      const savedSession = await saveSession({
+        duration: recordData.duration || 0,
+        events: recordData.events || [],
+        survey,
+      });
+
+      navigation.navigate('Result', { sessionId: savedSession.id });
+    } catch (err) {
+      console.error('Failed to save session:', err);
+      navigation.navigate('Result', {
+        duration: recordData.duration,
+        events: recordData.events,
+      });
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   const answered = Object.keys(answers).length;
   const allAnswered = answered === QUESTIONS.length;
+  const progressPct = (answered / QUESTIONS.length) * 100;
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView style={styles.container}>
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
 
         <Text style={styles.title}>แบบสอบถามหลังตื่นนอน</Text>
-        <Text style={styles.sub}>กรุณาตอบให้ครบทุกข้อ ({answered}/{QUESTIONS.length})</Text>
+        <Text style={styles.sub}>กรุณาตอบให้ครบทุกข้อ</Text>
+
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${progressPct}%` }]} />
+        </View>
+        <Text style={styles.progressLabel}>{answered}/{QUESTIONS.length} ข้อ</Text>
 
         {QUESTIONS.map((q, qi) => (
           <View key={q.id} style={styles.questionCard}>
-            <Text style={styles.questionNum}>ข้อ {qi + 1}</Text>
+            <View style={styles.questionNumBadge}>
+              <Text style={styles.questionNumText}>{qi + 1}</Text>
+            </View>
             <Text style={styles.questionText}>{q.question}</Text>
             <View style={styles.optionsGrid}>
               {q.options.map((opt, oi) => {
@@ -94,6 +122,7 @@ export default function SurveyScreen({ route, navigation }) {
                   <TouchableOpacity
                     key={oi}
                     style={[styles.optionBtn, selected && styles.optionSelected]}
+                    activeOpacity={0.7}
                     onPress={() => selectAnswer(q.id, opt)}
                   >
                     <Text style={styles.optionEmoji}>{opt.emoji}</Text>
@@ -108,12 +137,17 @@ export default function SurveyScreen({ route, navigation }) {
         ))}
 
         <TouchableOpacity
-          style={[styles.submitBtn, !allAnswered && styles.submitDisabled]}
-          onPress={allAnswered ? submit : null}
+          style={[styles.submitBtn, (!allAnswered || submitting) && styles.submitDisabled]}
+          activeOpacity={0.85}
+          onPress={allAnswered && !submitting ? submit : null}
         >
-          <Text style={styles.submitText}>
-            {allAnswered ? '✅ ดูผลการนอน' : `กรุณาตอบให้ครบ (${answered}/${QUESTIONS.length})`}
-          </Text>
+          {submitting ? (
+            <ActivityIndicator color={colors.onPrimary} />
+          ) : (
+            <Text style={[styles.submitText, !allAnswered && styles.submitTextDisabled]}>
+              {allAnswered ? '✅ ดูผลการนอน' : `กรุณาตอบให้ครบ (${answered}/${QUESTIONS.length})`}
+            </Text>
+          )}
         </TouchableOpacity>
 
         <View style={{ height: 40 }} />
@@ -123,30 +157,43 @@ export default function SurveyScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#0f172a' },
+  safe: { flex: 1, backgroundColor: colors.bg },
   container: { flex: 1, padding: 20 },
-  title: { color: '#f1f5f9', fontSize: 24, fontWeight: 'bold', marginBottom: 6 },
-  sub: { color: '#64748b', fontSize: 14, marginBottom: 24 },
+  title: { color: colors.ink, fontSize: 23, fontWeight: '700', marginBottom: 4 },
+  sub: { color: colors.inkMuted, fontSize: 14, marginBottom: 14 },
+
+  progressTrack: { height: 6, backgroundColor: colors.surfaceMuted, borderRadius: 3, overflow: 'hidden', marginBottom: 6 },
+  progressFill: { height: '100%', backgroundColor: colors.primary, borderRadius: 3 },
+  progressLabel: { color: colors.inkFaint, fontSize: 12, marginBottom: 22 },
+
   questionCard: {
-    backgroundColor: '#1e293b', borderRadius: 16,
-    padding: 16, marginBottom: 16,
+    backgroundColor: colors.surface, borderRadius: radius.lg,
+    padding: 18, marginBottom: 14, ...shadow.card,
   },
-  questionNum: { color: '#38bdf8', fontSize: 12, marginBottom: 4 },
-  questionText: { color: '#f1f5f9', fontSize: 16, fontWeight: '600', marginBottom: 16 },
-  optionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  questionNumBadge: {
+    width: 26, height: 26, borderRadius: 13, backgroundColor: colors.primarySoft,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 10,
+  },
+  questionNumText: { color: colors.primaryDeep, fontSize: 12, fontWeight: '700' },
+  questionText: { color: colors.ink, fontSize: 16, fontWeight: '600', marginBottom: 16 },
+  optionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   optionBtn: {
-    width: '47%', backgroundColor: '#0f172a',
-    borderRadius: 12, padding: 12, alignItems: 'center',
-    borderWidth: 1.5, borderColor: '#1e293b',
+    width: '47%', backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md, padding: 14, alignItems: 'center',
+    borderWidth: 1.5, borderColor: 'transparent',
   },
-  optionSelected: { borderColor: '#38bdf8', backgroundColor: '#0c2a3d' },
-  optionEmoji: { fontSize: 28, marginBottom: 6 },
-  optionLabel: { color: '#64748b', fontSize: 12, textAlign: 'center' },
-  optionLabelSelected: { color: '#38bdf8' },
+  optionSelected: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  optionEmoji: { fontSize: 26, marginBottom: 6 },
+  optionLabel: { color: colors.inkMuted, fontSize: 12, textAlign: 'center', fontWeight: '500' },
+  optionLabelSelected: { color: colors.primaryDeep, fontWeight: '700' },
+
   submitBtn: {
-    backgroundColor: '#38bdf8', borderRadius: 14,
-    padding: 18, alignItems: 'center',
+    backgroundColor: colors.primary, borderRadius: radius.lg,
+    padding: 19, alignItems: 'center',
+    shadowColor: colors.primaryDeep, shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22, shadowRadius: 14, elevation: 5,
   },
-  submitDisabled: { backgroundColor: '#1e293b' },
-  submitText: { color: '#0f172a', fontSize: 16, fontWeight: 'bold' },
+  submitDisabled: { backgroundColor: colors.surfaceMuted, shadowOpacity: 0 },
+  submitText: { color: colors.onPrimary, fontSize: 16, fontWeight: '700' },
+  submitTextDisabled: { color: colors.inkFaint },
 });

@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { colors, radius, shadow } from '../utils/theme';
 
 export default function ResultExportScreen({ route, navigation }) {
   const {
@@ -13,34 +14,30 @@ export default function ResultExportScreen({ route, navigation }) {
     events = [],
   } = route.params || {};
 
-  // FIX 1: Safely handle events — ensure it's always an array
   const safeEvents = Array.isArray(events) ? events : [];
 
   const generateHTML = () => {
-    // FIX 2: Guard against undefined fields in each event
     const eventsRows = safeEvents.length > 0
       ? safeEvents.map(ev => {
           const color =
-            ev.type === 'apnea' ? '#ef4444' :
-            ev.type === 'snore' ? '#f59e0b' : '#38bdf8';
+            ev.type === 'apnea' ? '#C1564E' :
+            ev.type === 'snore' ? '#D6A23C' : '#5B7FA6';
           return `
             <tr>
-              <td style="text-align: center; padding: 10px; border: 1px solid #cbd5e1;">${ev.time || '-'}</td>
-              <td style="padding: 10px; border: 1px solid #cbd5e1; color: ${color}; font-weight: bold;">${ev.msg || '-'}</td>
+              <td style="text-align: center; padding: 10px; border: 1px solid #E8E2D5;">${ev.time || '-'}</td>
+              <td style="padding: 10px; border: 1px solid #E8E2D5; color: ${color}; font-weight: bold;">${ev.msg || '-'}</td>
             </tr>`;
         }).join('')
-      : `<tr><td colspan="2" style="text-align:center; padding:16px; color:#94a3b8; border:1px solid #cbd5e1;">ไม่มีเหตุการณ์ที่บันทึกไว้</td></tr>`;
+      : `<tr><td colspan="2" style="text-align:center; padding:16px; color:#A4A29C; border:1px solid #E8E2D5;">ไม่มีเหตุการณ์ที่บันทึกไว้</td></tr>`;
 
     const today = new Date().toLocaleDateString('th-TH', {
       year: 'numeric', month: 'long', day: 'numeric',
     });
 
     const riskColor =
-      Number(ahiValue) >= 30 ? '#ef4444' :
-      Number(ahiValue) >= 15 ? '#f97316' : '#f59e0b';
+      Number(ahiValue) >= 30 ? '#C1564E' :
+      Number(ahiValue) >= 15 ? '#D17A3D' : '#D6A23C';
 
-    // FIX 3: Use Google Fonts (Sarabun) for Thai character support
-    // FIX 4: Replace display:flex rows with HTML <table> layout for reliable PDF rendering
     return `
       <html>
         <head>
@@ -50,53 +47,52 @@ export default function ResultExportScreen({ route, navigation }) {
             body {
               font-family: 'Sarabun', 'Arial Unicode MS', Arial, sans-serif;
               padding: 40px;
-              color: #333;
+              color: #2B2B2E;
               line-height: 1.7;
               font-size: 14px;
+              background-color: #FAF8F4;
             }
             .header {
               text-align: center;
-              border-bottom: 3px solid #0f172a;
+              border-bottom: 3px solid #5B7FA6;
               padding-bottom: 12px;
               margin-bottom: 28px;
             }
-            .title { font-size: 26px; color: #0f172a; font-weight: bold; margin: 0; }
-            .subtitle { font-size: 14px; color: #64748b; margin-top: 6px; }
+            .title { font-size: 26px; color: #2B2B2E; font-weight: bold; margin: 0; }
+            .subtitle { font-size: 14px; color: #6B6B70; margin-top: 6px; }
 
-            /* FIX 4: Use table for two-column layout instead of flexbox */
             .info-box {
-              background-color: #f8fafc;
+              background-color: #FFFFFF;
               padding: 20px;
-              border-radius: 8px;
-              border: 1px solid #e2e8f0;
+              border-radius: 12px;
+              border: 1px solid #E8E2D5;
               margin-bottom: 28px;
             }
             .info-table { width: 100%; border-collapse: collapse; border: none; }
             .info-table td { border: none; padding: 10px 8px; vertical-align: top; width: 50%; }
-            .stat-title { font-size: 13px; color: #64748b; margin-bottom: 4px; }
-            .stat-value { font-size: 17px; font-weight: bold; color: #0f172a; }
-            .highlight { color: #ef4444; font-size: 22px; }
+            .stat-title { font-size: 13px; color: #6B6B70; margin-bottom: 4px; }
+            .stat-value { font-size: 17px; font-weight: bold; color: #2B2B2E; }
+            .highlight { color: #C1564E; font-size: 22px; }
 
-            h3 { color: #0f172a; margin-bottom: 10px; }
+            h3 { color: #2B2B2E; margin-bottom: 10px; }
 
-            /* Event timeline table */
             .event-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
             .event-table th {
-              background-color: #f1f5f9;
-              color: #475569;
+              background-color: #F1EDE4;
+              color: #6B6B70;
               font-weight: bold;
               text-align: center;
               padding: 10px;
-              border: 1px solid #cbd5e1;
+              border: 1px solid #E8E2D5;
             }
 
             .footer {
               margin-top: 50px;
               font-size: 12px;
-              color: #94a3b8;
+              color: #A4A29C;
               text-align: center;
               font-style: italic;
-              border-top: 1px solid #e2e8f0;
+              border-top: 1px solid #E8E2D5;
               padding-top: 18px;
               line-height: 1.8;
             }
@@ -124,7 +120,7 @@ export default function ResultExportScreen({ route, navigation }) {
               <tr>
                 <td>
                   <div class="stat-title">ค่าดัชนีการหยุดหายใจ (Pseudo-AHI)</div>
-                  <div class="stat-value highlight">${ahiValue} <span style="font-size:13px; color:#333;">ครั้ง/ชั่วโมง</span></div>
+                  <div class="stat-value highlight">${ahiValue} <span style="font-size:13px; color:#2B2B2E;">ครั้ง/ชั่วโมง</span></div>
                 </td>
                 <td>
                   <div class="stat-title">ระดับความเสี่ยง (Risk Level)</div>
@@ -134,11 +130,11 @@ export default function ResultExportScreen({ route, navigation }) {
               <tr>
                 <td>
                   <div class="stat-title">จำนวนภาวะหยุดหายใจที่ตรวจพบ</div>
-                  <div class="stat-value" style="color: #ef4444;">${apneaCount} ครั้ง</div>
+                  <div class="stat-value" style="color: #C1564E;">${apneaCount} ครั้ง</div>
                 </td>
                 <td>
                   <div class="stat-title">จำนวนเสียงกรนที่ตรวจพบ</div>
-                  <div class="stat-value" style="color: #f59e0b;">${snoreCount} ครั้ง</div>
+                  <div class="stat-value" style="color: #D6A23C;">${snoreCount} ครั้ง</div>
                 </td>
               </tr>
             </table>
@@ -195,23 +191,42 @@ export default function ResultExportScreen({ route, navigation }) {
   return (
     <View style={styles.container}>
       <View style={styles.card}>
-        <Text style={styles.icon}>📄</Text>
+        <View style={styles.iconBox}>
+          <Text style={styles.icon}>📄</Text>
+        </View>
         <Text style={styles.title}>ข้อมูลพร้อมส่งออก</Text>
         <Text style={styles.subtitle}>
-          รายงานของคุณจะถูกจัดทำในรูปแบบเอกสาร PDF อย่างเป็นทางการ
-          พร้อมตารางสรุปผลและไทม์ไลน์โดยละเอียด
+          รายงานของคุณจะถูกจัดทำในรูปแบบเอกสาร PDF อย่างเป็นทางการ พร้อมตารางสรุปผลและไทม์ไลน์โดยละเอียด
         </Text>
 
-        {/* Preview summary before export */}
         <View style={styles.previewBox}>
-          <Text style={styles.previewRow}>🛏️ ระยะเวลา: <Text style={styles.previewVal}>{sleepDuration}</Text></Text>
-          <Text style={styles.previewRow}>📊 AHI: <Text style={styles.previewVal}>{ahiValue} ครั้ง/ชม.</Text></Text>
-          <Text style={styles.previewRow}>⚠️ หยุดหายใจ: <Text style={styles.previewVal}>{apneaCount} ครั้ง</Text></Text>
-          <Text style={styles.previewRow}>🔊 เสียงกรน: <Text style={styles.previewVal}>{snoreCount} ครั้ง</Text></Text>
-          <Text style={styles.previewRow}>📋 เหตุการณ์: <Text style={styles.previewVal}>{safeEvents.length} รายการ</Text></Text>
+          <View style={styles.previewRow}>
+            <Text style={styles.previewLabel}>🛏️ ระยะเวลา</Text>
+            <Text style={styles.previewVal}>{sleepDuration}</Text>
+          </View>
+          <View style={styles.previewDivider} />
+          <View style={styles.previewRow}>
+            <Text style={styles.previewLabel}>📊 AHI</Text>
+            <Text style={styles.previewVal}>{ahiValue} ครั้ง/ชม.</Text>
+          </View>
+          <View style={styles.previewDivider} />
+          <View style={styles.previewRow}>
+            <Text style={styles.previewLabel}>⚠️ หยุดหายใจ</Text>
+            <Text style={styles.previewVal}>{apneaCount} ครั้ง</Text>
+          </View>
+          <View style={styles.previewDivider} />
+          <View style={styles.previewRow}>
+            <Text style={styles.previewLabel}>🔊 เสียงกรน</Text>
+            <Text style={styles.previewVal}>{snoreCount} ครั้ง</Text>
+          </View>
+          <View style={styles.previewDivider} />
+          <View style={styles.previewRow}>
+            <Text style={styles.previewLabel}>📋 เหตุการณ์</Text>
+            <Text style={styles.previewVal}>{safeEvents.length} รายการ</Text>
+          </View>
         </View>
 
-        <TouchableOpacity style={styles.exportBtn} onPress={handleExportPDF}>
+        <TouchableOpacity style={styles.exportBtn} activeOpacity={0.85} onPress={handleExportPDF}>
           <Text style={styles.exportBtnText}>สร้างไฟล์ PDF และแชร์</Text>
         </TouchableOpacity>
 
@@ -226,48 +241,45 @@ export default function ResultExportScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: colors.bg,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
   card: {
-    backgroundColor: '#1e293b',
-    padding: 30,
-    borderRadius: 16,
+    backgroundColor: colors.surface,
+    padding: 28,
+    borderRadius: radius.xl,
     alignItems: 'center',
     width: '100%',
     maxWidth: 400,
+    ...shadow.raised,
   },
-  icon: { fontSize: 50, marginBottom: 10 },
-  title: { fontSize: 22, fontWeight: 'bold', color: '#f1f5f9', marginBottom: 10 },
-  subtitle: {
-    fontSize: 14,
-    color: '#94a3b8',
-    textAlign: 'center',
-    marginBottom: 20,
-    lineHeight: 22,
+  iconBox: {
+    width: 64, height: 64, borderRadius: radius.lg,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 14,
   },
+  icon: { fontSize: 28 },
+  title: { fontSize: 21, fontWeight: '700', color: colors.ink, marginBottom: 8 },
+  subtitle: { fontSize: 13, color: colors.inkMuted, textAlign: 'center', marginBottom: 22, lineHeight: 20 },
+
   previewBox: {
-    backgroundColor: '#0f172a',
-    borderRadius: 10,
-    padding: 14,
-    width: '100%',
-    marginBottom: 24,
-    gap: 6,
+    backgroundColor: colors.surfaceMuted, borderRadius: radius.md,
+    padding: 6, width: '100%', marginBottom: 24,
   },
-  previewRow: { color: '#64748b', fontSize: 13 },
-  previewVal: { color: '#f1f5f9', fontWeight: '600' },
+  previewRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 10 },
+  previewDivider: { height: 1, backgroundColor: colors.border, marginHorizontal: 10 },
+  previewLabel: { color: colors.inkMuted, fontSize: 13 },
+  previewVal: { color: colors.ink, fontWeight: '700', fontSize: 13 },
+
   exportBtn: {
-    backgroundColor: '#38bdf8',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    width: '100%',
-    alignItems: 'center',
-    marginBottom: 15,
+    backgroundColor: colors.primary, paddingVertical: 16, paddingHorizontal: 20,
+    borderRadius: radius.lg, width: '100%', alignItems: 'center', marginBottom: 14,
+    shadowColor: colors.primaryDeep, shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22, shadowRadius: 12, elevation: 4,
   },
-  exportBtnText: { color: '#0f172a', fontSize: 16, fontWeight: 'bold' },
+  exportBtnText: { color: colors.onPrimary, fontSize: 16, fontWeight: '700' },
   backBtn: { paddingVertical: 10 },
-  backBtnText: { color: '#64748b', fontSize: 16 },
+  backBtnText: { color: colors.inkFaint, fontSize: 15 },
 });
