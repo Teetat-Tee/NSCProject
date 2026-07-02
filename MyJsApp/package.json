@@ -15,7 +15,7 @@
     "@react-navigation/stack": "^7.9.2",
     "@tensorflow/tfjs": "^3.21.0",
     "expo": "~55.0.0",
-    "expo-asset": "^57.0.2",
+    "expo-asset": "~55.0.17",
     "expo-audio": "~55.0.15",
     "expo-crypto": "~55.0.16",
     "expo-file-system": "~55.0.23",
