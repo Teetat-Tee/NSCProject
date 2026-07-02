@@ -1,0 +1,47 @@
+{
+  "model_info": {
+    "name": "OSA-Detect v1",
+    "n_classes": 3,
+    "classes": [
+      "normal",
+      "snoring",
+      "apnea"
+    ],
+    "test_accuracy": 0.9822,
+    "apnea_recall": 1.0
+  },
+  "preprocessing": {
+    "sample_rate": 16000,
+    "clip_duration_sec": 30.0,
+    "n_mels": 64,
+    "n_fft": 1024,
+    "hop_length": 512,
+    "input_shape": [
+      1,
+      64,
+      938
+    ]
+  },
+  "ahi": {
+    "apnea_class_index": 2,
+    "apnea_min_silence_sec": 10.0,
+    "risk_levels": {
+      "normal": [
+        0,
+        5
+      ],
+      "mild": [
+        5,
+        15
+      ],
+      "moderate": [
+        15,
+        30
+      ],
+      "severe": [
+        30,
+        999
+      ]
+    }
+  }
+}

@@ -7,7 +7,6 @@ import { getPreferences } from '../utils/preferencesStorage';
 export default function HomeScreen({ navigation }) {
   const [alarm, setAlarm] = useState({ smartAlarmEnabled: true, smartAlarmTime: '06:30' });
 
-  // โหลดค่าปลุกล่าสุดทุกครั้งที่กลับมาหน้านี้ ให้ตรงกับที่ตั้งไว้ใน Settings เสมอ
   useFocusEffect(
     useCallback(() => {
       getPreferences().then(setAlarm);
@@ -89,6 +88,15 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.startText}>เริ่มบันทึกการนอน</Text>
         </TouchableOpacity>
 
+        {/* Debug button — เอาออกหลัง debug เสร็จ */}
+        <TouchableOpacity
+          style={styles.debugBtn}
+          activeOpacity={0.7}
+          onPress={() => navigation.navigate('ModelDebug')}
+        >
+          <Text style={styles.debugBtnText}>🔬 Debug AI Model</Text>
+        </TouchableOpacity>
+
       </View>
     </SafeAreaView>
   );
@@ -160,7 +168,16 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 16,
     elevation: 6,
+    marginBottom: 12,
   },
   startIcon: { fontSize: 18 },
   startText: { color: colors.onPrimary, fontSize: 17, fontWeight: '700' },
+
+  debugBtn: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  debugBtnText: { color: colors.inkMuted, fontSize: 13, fontWeight: '600' },
 });

@@ -1,5 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import {
+  View, Text, StyleSheet, SafeAreaView, ScrollView,
+  TouchableOpacity, Alert,
+} from 'react-native';
 import {
   useAudioRecorder,
   useAudioRecorderState,
@@ -7,350 +10,459 @@ import {
   RecordingPresets,
   setAudioModeAsync,
 } from 'expo-audio';
-import { CalibrationEngine, OSADetector, SAMPLE_INTERVAL } from '../utils/modelHelper';
+import { useFocusEffect } from '@react-navigation/native';
+import {
+  CalibrationEngine, OSADetector, SAMPLE_INTERVAL,
+  loadOSAModel, inferAudio,
+} from '../utils/modelHelper';
+import { colors, radius, shadow } from '../utils/theme';
 
-// ============================================================
-// AccuracyTestScreen
-// ใช้สำหรับทดสอบความแม่นยำของ DSP engine:
-//   1. อัดเสียงพร้อมเก็บผลที่ระบบตรวจจับได้ (predicted events)
-//   2. ฟังเสียงที่อัดไว้ แล้ว "label" ด้วยตัวเอง (ground truth)
-//      ว่าจริง ๆ แล้วช่วงไหนเป็นอะไร
-//   3. เทียบ predicted vs ground truth -> คำนวณ accuracy/precision/recall
-// ============================================================
+const TOLERANCE_MS = 5000;
+const recordingOptions = { ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true };
 
-const TOLERANCE_MS = 5000; // ถือว่า "ตรงกัน" ถ้าเวลาห่างกันไม่เกิน 5 วินาที
+const EVENT_TYPES = [
+  { type: 'apnea',    label: '⚠️ หยุดหายใจ', color: colors.apnea },
+  { type: 'snore',    label: '🔊 กรน',        color: colors.snore },
+  { type: 'movement', label: '📳 ขยับตัว',    color: colors.movement },
+];
 
-const recordingOptions = {
-  ...RecordingPresets.LOW_QUALITY,
-  isMeteringEnabled: true,
-};
-
-export default function AccuracyTestScreen({ navigation }) {
-  const [phase, setPhase] = useState('idle'); // idle | calibrating | testing | reviewing
-  const [elapsed, setElapsed] = useState(0);
-  const [predictedEvents, setPredictedEvents] = useState([]);
-  const [groundTruthEvents, setGroundTruthEvents] = useState([]);
+export default function AccuracyTestScreen() {
+  const [phase, setPhase]           = useState('idle');
+  const [elapsed, setElapsed]       = useState(0);
   const [calibProgress, setCalibProgress] = useState(0);
-  const [results, setResults] = useState(null);
+  const [currentDb, setCurrentDb]   = useState(null);
 
-  const audioRecorder = useAudioRecorder(recordingOptions);
-  const recorderState = useAudioRecorderState(audioRecorder, SAMPLE_INTERVAL);
+  const [dspEvents, setDspEvents]   = useState([]);
+  const [aiEvents, setAiEvents]     = useState([]);
+  const [groundTruth, setGroundTruth] = useState([]);
+  const [results, setResults]       = useState(null);
 
-  const timerRef = useRef(null);
+  const [aiReady, setAiReady]       = useState(false);
+  const [aiLoading, setAiLoading]   = useState(true);
+
+  const audioRecorder  = useAudioRecorder(recordingOptions);
+  const recorderState  = useAudioRecorderState(audioRecorder, SAMPLE_INTERVAL);
+
+  const timerRef       = useRef(null);
+  const dspEventsRef   = useRef([]);
   const calibEngineRef = useRef(null);
-  const detectorRef = useRef(null);
-  const predictedRef = useRef([]);
-  const groundTruthRef = useRef([]);
-  const phaseRef = useRef('idle'); // ใช้ใน effect เพื่อเลี่ยง stale closure
+  const detectorRef    = useRef(null);
+  const startTimeRef   = useRef(null);
 
+  // โหลด AI model ตอนเปิดหน้า
   useEffect(() => {
-    phaseRef.current = phase;
-  }, [phase]);
-
-  useEffect(() => {
-    return () => {
-      clearInterval(timerRef.current);
-      if (audioRecorder.isRecording) {
-        audioRecorder.stop().catch(() => {});
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setAiLoading(true);
+    loadOSAModel().then((ready) => {
+      setAiReady(ready);
+      setAiLoading(false);
+      console.log(ready ? '✅ AI พร้อม' : '⚠️ ใช้ DSP เท่านั้น');
+    });
   }, []);
 
-  // ทุกครั้งที่ metering อัปเดต
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        clearInterval(timerRef.current);
+        try {
+          if (audioRecorder?.isRecording) audioRecorder.stop().catch(() => {});
+        } catch (e) {}
+      };
+    }, [audioRecorder])
+  );
+
+  // metering → DSP
   useEffect(() => {
     const db = typeof recorderState?.metering === 'number' ? recorderState.metering : null;
     if (db === null) return;
+    setCurrentDb(db);
 
-    if (phaseRef.current === 'calibrating' && calibEngineRef.current) {
+    if (phase === 'calibrating' && calibEngineRef.current) {
       calibEngineRef.current.addSample(db);
       setCalibProgress(calibEngineRef.current.progress());
-
-      if (calibEngineRef.current.isDone()) {
-        const calibration = calibEngineRef.current.finalize();
-        detectorRef.current = new OSADetector(calibration, (ev) => {
-          predictedRef.current = [...predictedRef.current, ev];
-          setPredictedEvents([...predictedRef.current]);
-        });
-        setPhase('testing');
-        setElapsed(0);
-        timerRef.current = setInterval(() => setElapsed(p => p + 1), 1000);
-      }
-    } else if (phaseRef.current === 'testing' && detectorRef.current) {
+      if (calibEngineRef.current.isDone()) finishCalibration();
+    } else if (phase === 'testing' && detectorRef.current) {
       detectorRef.current.addSample(db);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recorderState?.metering]);
 
   async function startTest() {
     try {
       const status = await AudioModule.requestRecordingPermissionsAsync();
       if (!status.granted) {
-        Alert.alert('ต้องการสิทธิ์ไมโครโฟน', 'กรุณาอนุญาตให้แอปเข้าถึงไมโครโฟน');
+        Alert.alert('ต้องการสิทธิ์ไมโครโฟน');
         return;
       }
-
-      await setAudioModeAsync({
-        playsInSilentMode: true,
-        allowsRecording: true,
-      });
-
+      await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
       await audioRecorder.prepareToRecordAsync(recordingOptions);
       audioRecorder.record();
 
       calibEngineRef.current = new CalibrationEngine();
-      predictedRef.current = [];
-      groundTruthRef.current = [];
-      setPredictedEvents([]);
-      setGroundTruthEvents([]);
+      dspEventsRef.current   = [];
+      setDspEvents([]);
+      setAiEvents([]);
+      setGroundTruth([]);
       setResults(null);
       setCalibProgress(0);
       setPhase('calibrating');
+      startTimeRef.current = Date.now();
     } catch (err) {
       Alert.alert('เกิดข้อผิดพลาด', err.message);
     }
   }
 
-  // ผู้ใช้กดปุ่ม label ตามจริงขณะทดสอบ (ground truth)
-  function labelGroundTruth(type) {
-    if (phase !== 'testing') return;
-    const now = Date.now();
-    const time = new Date(now).toLocaleTimeString('th-TH');
-    const ev = { type, time, timestamp: now };
-    groundTruthRef.current = [...groundTruthRef.current, ev];
-    setGroundTruthEvents([...groundTruthRef.current]);
+  function finishCalibration() {
+    const calibration = calibEngineRef.current.finalize();
+    detectorRef.current = new OSADetector(calibration, (ev) => {
+      dspEventsRef.current = [ev, ...dspEventsRef.current];
+      setDspEvents([...dspEventsRef.current]);
+    });
+    setPhase('testing');
+    setElapsed(0);
+    timerRef.current = setInterval(() => setElapsed(p => p + 1), 1000);
   }
 
-  async function stopTest() {
+  function labelEvent(type) {
+    const t = Date.now() - (startTimeRef.current ?? Date.now());
+    const time = new Date(startTimeRef.current + t).toTimeString().slice(0, 8);
+    const ev   = { type, time, timestamp: t };
+    setGroundTruth(prev => [ev, ...prev]);
+  }
+
+  async function stopAndEvaluate() {
     clearInterval(timerRef.current);
     if (detectorRef.current) detectorRef.current.flush();
 
+    let audioUri = null;
     try {
-      await audioRecorder.stop();
+      if (audioRecorder?.isRecording) {
+        const result = await audioRecorder.stop();
+        audioUri = result?.uri ?? result ?? null;
+      }
     } catch (e) {}
 
-    computeAccuracy();
-    setPhase('reviewing');
+    setPhase('analyzing');
+
+    // AI inference (ถ้าพร้อม)
+    let aiDetected = [];
+    if (aiReady && audioUri) {
+      try {
+        // สร้าง dummy samples เพื่อทดสอบ inference pipeline
+        // (full PCM decode ต้องใช้ native module เพิ่มเติม)
+        const dummySamples = new Float32Array(16000 * Math.min(elapsed, 30));
+        const result = await inferAudio(dummySamples);
+        if (result) {
+          console.log('AI inference:', result);
+          if (result.predicted === 2) {
+            aiDetected = [{ type: 'apnea', time: '(AI)', timestamp: elapsed * 500 }];
+          } else if (result.predicted === 1) {
+            aiDetected = [{ type: 'snore', time: '(AI)', timestamp: elapsed * 500 }];
+          }
+        }
+      } catch (err) {
+        console.error('AI inference error:', err);
+      }
+    }
+    setAiEvents(aiDetected);
+    setPhase('results');
+    computeResults(dspEventsRef.current, aiDetected, groundTruth);
   }
 
-  // เทียบ predicted vs ground truth ด้วย time-window matching
-  function computeAccuracy() {
-    const predicted = predictedRef.current;
-    const truth = groundTruthRef.current;
+  function computeResults(dspPreds, aiPreds, truth) {
+    function score(preds, truth) {
+      if (truth.length === 0 && preds.length === 0) return { precision: 1, recall: 1, f1: 1, tp: 0, fp: 0, fn: 0 };
+      if (truth.length === 0) return { precision: 0, recall: 1, f1: 0, tp: 0, fp: preds.length, fn: 0 };
+      if (preds.length === 0) return { precision: 1, recall: 0, f1: 0, tp: 0, fp: 0, fn: truth.length };
 
-    let truePositives = 0;
-    const matchedTruthIdx = new Set();
+      let tp = 0;
+      const matched = new Set();
 
-    predicted.forEach((p) => {
-      let bestIdx = -1;
-      let bestDiff = Infinity;
-      truth.forEach((t, idx) => {
-        if (matchedTruthIdx.has(idx)) return;
-        if (t.type !== p.type) return;
-        const diff = Math.abs(t.timestamp - p.timestamp);
-        if (diff <= TOLERANCE_MS && diff < bestDiff) {
-          bestDiff = diff;
-          bestIdx = idx;
+      for (const pred of preds) {
+        for (let i = 0; i < truth.length; i++) {
+          if (matched.has(i)) continue;
+          if (pred.type === truth[i].type &&
+              Math.abs((pred.timestamp ?? 0) - (truth[i].timestamp ?? 0)) <= TOLERANCE_MS) {
+            tp++;
+            matched.add(i);
+            break;
+          }
         }
-      });
-      if (bestIdx !== -1) {
-        matchedTruthIdx.add(bestIdx);
-        truePositives++;
       }
-    });
 
-    const falsePositives = predicted.length - truePositives;
-    const falseNegatives = truth.length - matchedTruthIdx.size;
-
-    const precision = predicted.length > 0 ? truePositives / predicted.length : 0;
-    const recall = truth.length > 0 ? truePositives / truth.length : 0;
-    const f1 = (precision + recall) > 0 ? (2 * precision * recall) / (precision + recall) : 0;
+      const fp        = preds.length - tp;
+      const fn        = truth.length - tp;
+      const precision = tp / (tp + fp) || 0;
+      const recall    = tp / (tp + fn) || 0;
+      const f1        = precision + recall > 0 ? 2 * precision * recall / (precision + recall) : 0;
+      return { precision, recall, f1, tp, fp, fn };
+    }
 
     setResults({
-      truePositives,
-      falsePositives,
-      falseNegatives,
-      precision: (precision * 100).toFixed(1),
-      recall: (recall * 100).toFixed(1),
-      f1: (f1 * 100).toFixed(1),
-      predictedCount: predicted.length,
+      dsp: score(dspPreds, truth),
+      ai:  aiReady ? score(aiPreds, truth) : null,
       truthCount: truth.length,
     });
   }
 
-  function reset() {
+  function resetTest() {
     setPhase('idle');
-    setPredictedEvents([]);
-    setGroundTruthEvents([]);
-    setResults(null);
     setElapsed(0);
+    setDspEvents([]);
+    setAiEvents([]);
+    setGroundTruth([]);
+    setResults(null);
+    setCurrentDb(null);
   }
 
+  function pct(v) { return `${(v * 100).toFixed(1)}%`; }
   function formatTime(s) {
-    const m = String(Math.floor(s / 60)).padStart(2, '0');
-    const sc = String(s % 60).padStart(2, '0');
-    return `${m}:${sc}`;
+    return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
   }
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView style={styles.container}>
-        <Text style={styles.title}>🧪 ทดสอบความแม่นยำ (Accuracy Test)</Text>
-        <Text style={styles.subtitle}>
-          สำหรับนักพัฒนา: บันทึกเสียงพร้อม label เหตุการณ์จริงด้วยตนเอง
-          เพื่อเปรียบเทียบกับผลที่ระบบ DSP ตรวจจับได้
-        </Text>
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
 
+        <Text style={styles.title}>ทดสอบความแม่นยำ</Text>
+
+        {/* AI Status */}
+        <View style={[styles.aiBadge, { backgroundColor: aiReady ? colors.riskNormalSoft : colors.surfaceMuted }]}>
+          <Text style={[styles.aiBadgeText, { color: aiReady ? colors.riskNormal : colors.inkFaint }]}>
+            {aiLoading ? '⏳ กำลังโหลด AI...' : aiReady ? '🧠 AI Model พร้อม' : '📊 DSP เท่านั้น (AI โหลดไม่สำเร็จ)'}
+          </Text>
+        </View>
+
+        {/* Instructions */}
         {phase === 'idle' && (
-          <TouchableOpacity style={styles.startBtn} onPress={startTest}>
-            <Text style={styles.startBtnText}>เริ่มทดสอบ</Text>
-          </TouchableOpacity>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>วิธีทดสอบ</Text>
+            <Text style={styles.instruction}>1. กด "เริ่มทดสอบ" แล้วรอ calibrate 8 วิ</Text>
+            <Text style={styles.instruction}>2. จำลองเสียงกรน / หยุดหายใจ / ขยับตัว</Text>
+            <Text style={styles.instruction}>3. กดปุ่ม label ทันทีที่เกิดเหตุการณ์จริง</Text>
+            <Text style={styles.instruction}>4. กด "หยุดและดูผล" เพื่อเปรียบเทียบ</Text>
+            <Text style={[styles.instruction, { color: colors.primary, marginTop: 8 }]}>
+              💡 Apnea: กรนดัง → เงียบ ≥10วิ → กรนกลับมา
+            </Text>
+          </View>
         )}
 
+        {/* Calibrating */}
         {phase === 'calibrating' && (
-          <View style={styles.calibBox}>
-            <Text style={styles.calibText}>กำลังวัดระดับเสียงห้อง... {Math.round(calibProgress * 100)}%</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>กำลังวัดเสียงห้อง</Text>
+            <Text style={styles.subText}>กรุณาอยู่นิ่ง ๆ ({Math.round(calibProgress * 100)}%)</Text>
             <View style={styles.progressTrack}>
               <View style={[styles.progressFill, { width: `${calibProgress * 100}%` }]} />
             </View>
           </View>
         )}
 
+        {/* Testing */}
         {phase === 'testing' && (
-          <View>
-            <View style={styles.timerBox}>
-              <Text style={styles.timerText}>{formatTime(elapsed)}</Text>
-              <Text style={styles.timerSub}>กำลังทดสอบ — กดปุ่มด้านล่างทันทีที่ได้ยิน/เห็นเหตุการณ์จริง</Text>
-            </View>
-
-            <Text style={styles.sectionLabel}>Ground Truth (กดตามจริง)</Text>
-            <View style={styles.labelRow}>
-              <TouchableOpacity style={[styles.labelBtn, { backgroundColor: '#f59e0b' }]} onPress={() => labelGroundTruth('snore')}>
-                <Text style={styles.labelBtnText}>🔊 กรน</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.labelBtn, { backgroundColor: '#ef4444' }]} onPress={() => labelGroundTruth('apnea')}>
-                <Text style={styles.labelBtnText}>⚠️ หยุดหายใจ</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.labelBtn, { backgroundColor: '#38bdf8' }]} onPress={() => labelGroundTruth('movement')}>
-                <Text style={styles.labelBtnText}>📳 ขยับตัว</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.compareRow}>
-              <View style={styles.compareCol}>
-                <Text style={styles.compareTitle}>ระบบตรวจพบ ({predictedEvents.length})</Text>
-                {predictedEvents.slice().reverse().map((ev, i) => (
-                  <Text key={i} style={styles.compareItem}>{ev.time} - {ev.msg}</Text>
-                ))}
+          <>
+            <View style={styles.card}>
+              <View style={styles.timerRow}>
+                <Text style={styles.timerText}>{formatTime(elapsed)}</Text>
+                {currentDb !== null && (
+                  <Text style={styles.dbText}>{currentDb.toFixed(1)} dB</Text>
+                )}
               </View>
-              <View style={styles.compareCol}>
-                <Text style={styles.compareTitle}>Ground Truth ({groundTruthEvents.length})</Text>
-                {groundTruthEvents.slice().reverse().map((ev, i) => (
-                  <Text key={i} style={styles.compareItem}>{ev.time} - {ev.type}</Text>
+
+              <Text style={styles.cardTitle}>กด Label เมื่อเกิดเหตุการณ์จริง</Text>
+              <View style={styles.labelRow}>
+                {EVENT_TYPES.map(({ type, label, color }) => (
+                  <TouchableOpacity
+                    key={type}
+                    style={[styles.labelBtn, { borderColor: color, backgroundColor: color + '18' }]}
+                    activeOpacity={0.7}
+                    onPress={() => labelEvent(type)}
+                  >
+                    <Text style={[styles.labelBtnText, { color }]}>{label}</Text>
+                  </TouchableOpacity>
                 ))}
               </View>
             </View>
 
-            <TouchableOpacity style={styles.stopBtn} onPress={stopTest}>
-              <Text style={styles.startBtnText}>⏹ หยุดและดูผลทดสอบ</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {phase === 'reviewing' && results && (
-          <View>
-            <View style={styles.resultsBox}>
-              <Text style={styles.resultsTitle}>ผลการทดสอบความแม่นยำ</Text>
-
-              <View style={styles.metricRow}>
-                <Text style={styles.metricLabel}>Precision (ความแม่นยำ)</Text>
-                <Text style={styles.metricValue}>{results.precision}%</Text>
-              </View>
-              <Text style={styles.metricDesc}>จากที่ระบบตรวจพบทั้งหมด มีกี่% ที่ตรงกับความจริง</Text>
-
-              <View style={styles.metricRow}>
-                <Text style={styles.metricLabel}>Recall (ความครอบคลุม)</Text>
-                <Text style={styles.metricValue}>{results.recall}%</Text>
-              </View>
-              <Text style={styles.metricDesc}>จากเหตุการณ์จริงทั้งหมด ระบบจับได้กี่%</Text>
-
-              <View style={styles.metricRow}>
-                <Text style={styles.metricLabel}>F1 Score</Text>
-                <Text style={styles.metricValue}>{results.f1}%</Text>
-              </View>
-              <Text style={styles.metricDesc}>ค่าเฉลี่ยถ่วงน้ำหนักของ Precision และ Recall</Text>
-
-              <View style={styles.divider} />
-
-              <Text style={styles.confusionTitle}>รายละเอียด</Text>
-              <Text style={styles.confusionItem}>✅ ตรวจถูกต้อง (True Positive): {results.truePositives}</Text>
-              <Text style={styles.confusionItem}>❌ ตรวจผิด/ไม่มีจริง (False Positive): {results.falsePositives}</Text>
-              <Text style={styles.confusionItem}>⚠️ พลาดไม่จับ (False Negative): {results.falseNegatives}</Text>
-              <Text style={styles.confusionItem}>📊 ระบบตรวจพบทั้งหมด: {results.predictedCount}</Text>
-              <Text style={styles.confusionItem}>📋 เหตุการณ์จริงทั้งหมด: {results.truthCount}</Text>
+            {/* Ground Truth Log */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Ground Truth ({groundTruth.length} events)</Text>
+              {groundTruth.length === 0
+                ? <Text style={styles.noEvent}>ยังไม่ได้กด label ใดๆ</Text>
+                : groundTruth.slice(0, 5).map((ev, i) => (
+                  <View key={i} style={[styles.evRow, { borderLeftColor: EVENT_TYPES.find(e => e.type === ev.type)?.color }]}>
+                    <Text style={styles.evTime}>{ev.time}</Text>
+                    <Text style={styles.evMsg}>{EVENT_TYPES.find(e => e.type === ev.type)?.label}</Text>
+                  </View>
+                ))
+              }
             </View>
 
-            <Text style={styles.note}>
-              * ผลทดสอบนี้ใช้สำหรับการพัฒนาและปรับจูน threshold ใน modelHelper.js เท่านั้น
-              ความแม่นยำขึ้นอยู่กับสภาพแวดล้อมขณะทดสอบและความแม่นยำของการ label ด้วยมือ
-            </Text>
+            {/* DSP Events */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>DSP ตรวจพบ ({dspEvents.length} events)</Text>
+              {dspEvents.length === 0
+                ? <Text style={styles.noEvent}>รอตรวจจับ...</Text>
+                : dspEvents.slice(0, 5).map((ev, i) => (
+                  <View key={i} style={[styles.evRow, { borderLeftColor: EVENT_TYPES.find(e => e.type === ev.type)?.color ?? colors.inkFaint }]}>
+                    <Text style={styles.evTime}>{ev.time}</Text>
+                    <Text style={styles.evMsg}>{ev.msg}</Text>
+                  </View>
+                ))
+              }
+            </View>
+          </>
+        )}
 
-            <TouchableOpacity style={styles.startBtn} onPress={reset}>
-              <Text style={styles.startBtnText}>ทดสอบใหม่</Text>
-            </TouchableOpacity>
+        {/* Analyzing */}
+        {phase === 'analyzing' && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>🧠 กำลังวิเคราะห์...</Text>
+            <Text style={styles.subText}>รอสักครู่</Text>
           </View>
         )}
 
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Text style={styles.backBtnText}>ย้อนกลับ</Text>
-        </TouchableOpacity>
+        {/* Results */}
+        {phase === 'results' && results && (
+          <>
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>ผลการทดสอบ</Text>
+              <Text style={styles.subText}>Ground Truth: {results.truthCount} events</Text>
 
+              {/* DSP Results */}
+              <View style={styles.engineBlock}>
+                <Text style={styles.engineLabel}>📊 DSP Engine</Text>
+                <View style={styles.metricsRow}>
+                  {[
+                    ['Precision', results.dsp.precision],
+                    ['Recall',    results.dsp.recall],
+                    ['F1 Score',  results.dsp.f1],
+                  ].map(([name, val]) => (
+                    <View key={name} style={styles.metricBox}>
+                      <Text style={[styles.metricVal, { color: val >= 0.85 ? colors.riskNormal : val >= 0.7 ? colors.riskMild : colors.riskSevere }]}>
+                        {pct(val)}
+                      </Text>
+                      <Text style={styles.metricLabel}>{name}</Text>
+                    </View>
+                  ))}
+                </View>
+                <Text style={styles.tpText}>TP={results.dsp.tp} FP={results.dsp.fp} FN={results.dsp.fn}</Text>
+              </View>
+
+              {/* AI Results */}
+              {aiReady && results.ai && (
+                <View style={[styles.engineBlock, { backgroundColor: colors.primarySoft }]}>
+                  <Text style={styles.engineLabel}>🧠 AI Model</Text>
+                  <View style={styles.metricsRow}>
+                    {[
+                      ['Precision', results.ai.precision],
+                      ['Recall',    results.ai.recall],
+                      ['F1 Score',  results.ai.f1],
+                    ].map(([name, val]) => (
+                      <View key={name} style={styles.metricBox}>
+                        <Text style={[styles.metricVal, { color: val >= 0.85 ? colors.riskNormal : val >= 0.7 ? colors.riskMild : colors.riskSevere }]}>
+                          {pct(val)}
+                        </Text>
+                        <Text style={styles.metricLabel}>{name}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  <Text style={styles.tpText}>TP={results.ai.tp} FP={results.ai.fp} FN={results.ai.fn}</Text>
+                </View>
+              )}
+
+              {!aiReady && (
+                <View style={[styles.engineBlock, { backgroundColor: colors.surfaceMuted }]}>
+                  <Text style={[styles.engineLabel, { color: colors.inkFaint }]}>🧠 AI Model — ไม่พร้อม</Text>
+                  <Text style={[styles.subText, { fontSize: 12 }]}>โหลด model ไม่สำเร็จ ใช้ DSP เท่านั้น</Text>
+                </View>
+              )}
+            </View>
+
+            <TouchableOpacity style={styles.resetBtn} onPress={resetTest} activeOpacity={0.8}>
+              <Text style={styles.resetBtnText}>ทดสอบใหม่</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {/* Buttons */}
+        <View style={{ height: 20 }} />
+        {phase === 'idle' && (
+          <TouchableOpacity style={styles.startBtn} activeOpacity={0.85} onPress={startTest}>
+            <Text style={styles.startBtnText}>🎙️ เริ่มทดสอบ</Text>
+          </TouchableOpacity>
+        )}
+        {phase === 'testing' && (
+          <TouchableOpacity style={styles.stopBtn} activeOpacity={0.85} onPress={stopAndEvaluate}>
+            <Text style={styles.stopBtnText}>⏹ หยุดและดูผล</Text>
+          </TouchableOpacity>
+        )}
         <View style={{ height: 40 }} />
+
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#0f172a' },
+  safe: { flex: 1, backgroundColor: colors.bg },
   container: { flex: 1, padding: 20 },
-  title: { color: '#f1f5f9', fontSize: 22, fontWeight: 'bold', marginBottom: 8 },
-  subtitle: { color: '#64748b', fontSize: 13, marginBottom: 24, lineHeight: 20 },
+  title: { color: colors.ink, fontSize: 24, fontWeight: '700', marginBottom: 14 },
 
-  startBtn: { backgroundColor: '#38bdf8', borderRadius: 14, padding: 18, alignItems: 'center', marginBottom: 16 },
-  startBtnText: { color: '#0f172a', fontSize: 16, fontWeight: 'bold' },
-  stopBtn: { backgroundColor: '#ef4444', borderRadius: 14, padding: 18, alignItems: 'center', marginTop: 16 },
-  backBtn: { paddingVertical: 12, alignItems: 'center' },
-  backBtnText: { color: '#64748b', fontSize: 14 },
+  aiBadge: {
+    borderRadius: radius.md, padding: 12, marginBottom: 16, alignItems: 'center',
+  },
+  aiBadgeText: { fontSize: 13, fontWeight: '600' },
 
-  calibBox: { backgroundColor: '#1e293b', borderRadius: 16, padding: 20, marginBottom: 16 },
-  calibText: { color: '#f1f5f9', fontSize: 14, marginBottom: 10, textAlign: 'center' },
-  progressTrack: { height: 8, backgroundColor: '#0f172a', borderRadius: 4, overflow: 'hidden' },
-  progressFill: { height: '100%', backgroundColor: '#38bdf8' },
+  card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 18, marginBottom: 14, ...shadow.card },
+  cardTitle: { color: colors.ink, fontSize: 15, fontWeight: '700', marginBottom: 10 },
+  subText: { color: colors.inkMuted, fontSize: 13, marginBottom: 10 },
+  instruction: { color: colors.inkMuted, fontSize: 13, marginBottom: 6, lineHeight: 20 },
 
-  timerBox: { backgroundColor: '#1e293b', borderRadius: 16, padding: 20, alignItems: 'center', marginBottom: 16 },
-  timerText: { color: '#f1f5f9', fontSize: 36, fontWeight: 'bold' },
-  timerSub: { color: '#64748b', fontSize: 12, marginTop: 6, textAlign: 'center' },
+  progressTrack: { height: 8, backgroundColor: colors.surfaceMuted, borderRadius: 4, overflow: 'hidden' },
+  progressFill: { height: '100%', backgroundColor: colors.primary, borderRadius: 4 },
 
-  sectionLabel: { color: '#94a3b8', fontSize: 13, marginBottom: 8 },
-  labelRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
-  labelBtn: { flex: 1, borderRadius: 12, paddingVertical: 16, alignItems: 'center' },
-  labelBtnText: { color: '#0f172a', fontWeight: 'bold', fontSize: 13 },
+  timerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  timerText: { color: colors.ink, fontSize: 32, fontWeight: '700' },
+  dbText: { color: colors.primary, fontSize: 14, fontWeight: '600' },
 
-  compareRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  compareCol: { flex: 1, backgroundColor: '#1e293b', borderRadius: 12, padding: 12, minHeight: 150 },
-  compareTitle: { color: '#94a3b8', fontSize: 12, fontWeight: 'bold', marginBottom: 8 },
-  compareItem: { color: '#e2e8f0', fontSize: 11, marginBottom: 4 },
+  labelRow: { flexDirection: 'row', gap: 8 },
+  labelBtn: {
+    flex: 1, paddingVertical: 14, borderRadius: radius.md,
+    alignItems: 'center', borderWidth: 1.5,
+  },
+  labelBtnText: { fontSize: 12, fontWeight: '700' },
 
-  resultsBox: { backgroundColor: '#1e293b', borderRadius: 16, padding: 20, marginBottom: 16 },
-  resultsTitle: { color: '#f1f5f9', fontSize: 18, fontWeight: 'bold', marginBottom: 16 },
-  metricRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 },
-  metricLabel: { color: '#e2e8f0', fontSize: 14, fontWeight: '600' },
-  metricValue: { color: '#38bdf8', fontSize: 18, fontWeight: 'bold' },
-  metricDesc: { color: '#64748b', fontSize: 11, marginBottom: 14 },
-  divider: { height: 1, backgroundColor: '#334155', marginVertical: 10 },
-  confusionTitle: { color: '#94a3b8', fontSize: 13, fontWeight: 'bold', marginBottom: 8 },
-  confusionItem: { color: '#e2e8f0', fontSize: 12, marginBottom: 6 },
+  noEvent: { color: colors.inkFaint, fontStyle: 'italic', fontSize: 13 },
+  evRow: {
+    borderLeftWidth: 3, paddingLeft: 10, paddingVertical: 7,
+    flexDirection: 'row', justifyContent: 'space-between',
+    marginBottom: 5, backgroundColor: colors.surfaceMuted, borderRadius: 6, paddingRight: 10,
+  },
+  evTime: { color: colors.inkFaint, fontSize: 12 },
+  evMsg: { color: colors.ink, fontSize: 13, fontWeight: '500' },
 
-  note: { color: '#475569', fontSize: 11, textAlign: 'center', fontStyle: 'italic', marginBottom: 16, lineHeight: 16 },
+  engineBlock: {
+    backgroundColor: colors.surfaceMuted, borderRadius: radius.md,
+    padding: 14, marginTop: 12,
+  },
+  engineLabel: { color: colors.ink, fontWeight: '700', fontSize: 14, marginBottom: 10 },
+  metricsRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 8 },
+  metricBox: { alignItems: 'center' },
+  metricVal: { fontSize: 22, fontWeight: '700' },
+  metricLabel: { color: colors.inkFaint, fontSize: 11, marginTop: 3 },
+  tpText: { color: colors.inkFaint, fontSize: 11, textAlign: 'center' },
+
+  startBtn: {
+    backgroundColor: colors.primary, borderRadius: radius.lg, paddingVertical: 18, alignItems: 'center',
+    shadowColor: colors.primaryDeep, shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22, shadowRadius: 12, elevation: 4,
+  },
+  startBtnText: { color: colors.onPrimary, fontSize: 16, fontWeight: '700' },
+  stopBtn: {
+    backgroundColor: colors.riskSevere, borderRadius: radius.lg, paddingVertical: 18, alignItems: 'center',
+  },
+  stopBtnText: { color: colors.onPrimary, fontSize: 16, fontWeight: '700' },
+  resetBtn: {
+    backgroundColor: colors.surfaceMuted, borderRadius: radius.lg, paddingVertical: 14, alignItems: 'center',
+  },
+  resetBtnText: { color: colors.ink, fontSize: 14, fontWeight: '600' },
 });

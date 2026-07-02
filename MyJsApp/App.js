@@ -16,6 +16,7 @@ import ResultExportScreen from './screens/ResultExportScreen';
 import AccuracyTestScreen from './screens/AccuracyTestScreen';
 import SummaryScreen from './screens/SummaryScreen';
 import { colors, shadow } from './utils/theme';
+import ModelDebugScreen from './screens/ModelDebugScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -40,6 +41,7 @@ function HomeStack() {
       <Stack.Screen name="Result" component={ResultScreen} />
       <Stack.Screen name="ResultExport" component={ResultExportScreen} />
       <Stack.Screen name="AccuracyTest" component={AccuracyTestScreen} />
+      <Stack.Screen name="ModelDebug" component={ModelDebugScreen} />
     </Stack.Navigator>
   );
 }

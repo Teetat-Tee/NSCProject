@@ -1,308 +1,339 @@
 // ============================================================
-// modelHelper.js — DSP Engine for OSA Screening (no AI, no mock)
-// ============================================================
-//
-// แนวคิดหลัก (ตาม feedback กรรมการ: "DSP อาจเพียงพอ ไม่จำเป็นต้องใช้ AI"):
-//
-// 1. CALIBRATION (8 วินาทีแรก)
-//    วัดระดับเสียงพื้นฐานของห้อง (ambient noise) เพื่อตั้ง threshold
-//    แบบ "สัมพัทธ์" (relative) แทนการใช้ค่า dB ตายตัว
-//    -> ห้องเงียบ vs ห้องมีเสียงแอร์/พัดลม จะได้ threshold ต่างกันอัตโนมัติ
-//
-// 2. CLASSIFICATION (state machine บนหน้าต่างเวลาเลื่อน/rolling window)
-//    ใช้ "รูปแบบ" ของเสียงดัง-เงียบ ไม่ใช่แค่ความดังขณะนั้น:
-//      - ขยับตัว   = peak สั้น ๆ ไม่สม่ำเสมอ
-//      - กรน       = เสียงดังต่อเนื่องเป็นจังหวะ (rhythmic)
-//      - หยุดหายใจ = เสียงดัง/กรน -> เงียบสนิทกะทันหัน -> (มักตามด้วยเสียงหอบ/กรนดัง)
-//      ซึ่งเป็น pattern ทางคลินิกที่ใช้จริงในการคัดกรอง OSA ด้วยเสียง
-//
-// 3. AHI = จำนวนครั้งที่ตรวจพบ apnea / ชั่วโมงการนอน (คำนวณใน ResultScreen.js)
-//
-// ขอบเขต: ใช้ dB metering จาก expo-av (ไม่ใช้ raw PCM/FFT) เนื่องจาก
-// Expo managed workflow ไม่ expose raw audio buffer แบบ real-time
-// การใช้ raw PCM + FFT ต้องเขียน native module (Swift/Kotlin) ซึ่งอยู่
-// นอกขอบเขตของโปรเจกต์นี้ — งานวิจัย/แอปเชิงพาณิชย์ด้าน snore tracking
-// ส่วนใหญ่ก็ใช้แนวทาง dB-pattern เช่นกัน
+// modelHelper.js — OSA Detection Engine
+// ใช้ @tensorflow/tfjs (pure JS) + DSP fallback
+// ไม่ใช้ tfjs-react-native เพราะ incompatible กับ Expo SDK 55
 // ============================================================
 
-// ---------- ค่าคงที่ปรับแต่งได้ ----------
-const CALIBRATION_DURATION_MS = 8000;      // ระยะเวลา calibrate (8 วิ)
-const SAMPLE_INTERVAL_MS = 150;            // sample ทุก 150ms
-const ROLLING_WINDOW_SIZE = 15;            // ~2.25 วิ ของ sample ล่าสุด (15 * 150ms)
+import * as tf from '@tensorflow/tfjs';
 
-// threshold แบบสัมพัทธ์กับ baseline (dB)
-const SNORE_OFFSET_DB = 12;                // baseline + 12dB = เริ่มถือว่าดัง (กรน)
-const LOUD_OFFSET_DB = 20;                 // baseline + 20dB = ดังมาก (อาจเป็นกรนดัง/หอบ)
-const SILENCE_OFFSET_DB = 4;               // baseline + 4dB = ถือว่ากลับสู่ความเงียบ
+// ============================================================
+// Preprocessing config (ต้อง match กับ Colab notebook)
+// ============================================================
+export const SAMPLE_RATE     = 16000;
+export const CLIP_DURATION   = 30.0;
+export const N_MELS          = 64;
+export const HOP_LENGTH      = 512;
+export const N_FFT           = 1024;
+export const SAMPLE_INTERVAL = 200;
 
-// เกณฑ์เวลา (วินาที) สำหรับแยกประเภทเหตุการณ์
-const MOVEMENT_MAX_DURATION_S = 1.5;       // peak สั้น ๆ = ขยับตัว
-const SNORE_MIN_DURATION_S = 1.5;          // เสียงดังต่อเนื่องอย่างน้อยเท่านี้ = กรน
-const APNEA_SILENCE_MIN_S = 8;             // เงียบกะทันหันอย่างน้อยเท่านี้ (clinical: >=10s ตามมาตรฐาน
-                                            // แต่ลดเป็น 8s เพื่อความไวในการคัดกรองเบื้องต้นบนมือถือ)
-const APNEA_PRECEDING_LOUD_MIN_S = 3;      // ต้องมีเสียงดัง/กรนนำหน้าอย่างน้อยเท่านี้ก่อนเงียบ
+const CLASS_NORMAL  = 0;
+const CLASS_SNORING = 1;
+const CLASS_APNEA   = 2;
 
-// dB ต่ำสุดที่ระบบจะรับรู้ (เงียบสนิท / ไม่มีสัญญาณ)
-const MIN_VALID_DB = -160;
+export const AHI_NORMAL   = 5;
+export const AHI_MILD     = 15;
+export const AHI_MODERATE = 30;
 
-/**
- * คำนวณ percentile ของ array ตัวเลข
- */
-function percentile(arr, p) {
-  if (arr.length === 0) return MIN_VALID_DB;
-  const sorted = [...arr].sort((a, b) => a - b);
-  const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor((p / 100) * sorted.length)));
-  return sorted[idx];
-}
+// ============================================================
+// TF Model state
+// ============================================================
+let _model     = null;
+let _modelReady = false;
 
-function median(arr) {
-  return percentile(arr, 50);
-}
+// ============================================================
+// โหลด model จาก osa_model_bundle.json (pure JS — ไม่ต้องใช้ native module)
+// ============================================================
+export async function loadOSAModel() {
+  if (_modelReady) return true;
 
-/**
- * ============================================================
- * CalibrationEngine
- * ใช้ตอนเริ่มบันทึก — เก็บ sample dB เป็นเวลา CALIBRATION_DURATION_MS
- * แล้วคำนวณ baseline + threshold ทั้งหมด
- * ============================================================
- */
-export class CalibrationEngine {
-  constructor() {
-    this.samples = [];
-    this.startTime = Date.now();
-  }
+  try {
+    await tf.ready();
+    console.log('TF version:', tf.version.tfjs);
+    console.log('TF backend:', tf.getBackend());
 
-  /** ป้อนค่า dB ระหว่าง calibrate */
-  addSample(db) {
-    if (typeof db === 'number' && db > MIN_VALID_DB) {
-      this.samples.push(db);
-    }
-  }
+    const bundle      = require('../assets/models/osa_model_bundle.json');
+    const modelJson   = bundle.modelJson;
+    const weightSpecs = modelJson.weightsManifest[0].weights;
 
-  isDone() {
-    return Date.now() - this.startTime >= CALIBRATION_DURATION_MS;
-  }
-
-  progress() {
-    return Math.min(1, (Date.now() - this.startTime) / CALIBRATION_DURATION_MS);
-  }
-
-  /**
-   * คืนค่า threshold profile สำหรับใช้ในการบันทึกจริง
-   * ถ้าไม่มี sample เลย (เช่น mic error) ใช้ค่า fallback มาตรฐาน
-   */
-  finalize() {
-    if (this.samples.length < 5) {
-      // fallback: ห้องเงียบทั่วไปประมาณ -50dB เป็น baseline มาตรฐาน
-      return {
-        baselineDb: -50,
-        noiseFloorDb: -60,
-        snoreThreshold: -50 + SNORE_OFFSET_DB,
-        loudThreshold: -50 + LOUD_OFFSET_DB,
-        silenceThreshold: -50 + SILENCE_OFFSET_DB,
-        sampleCount: 0,
-        reliable: false,
-      };
+    // decode base64 → Uint8Array โดยใช้ DataView
+    // หลีกเลี่ยง ArrayBuffer.isView / isTypedArray bug บน Hermes
+    const b64    = bundle.weightsB64;
+    const binary = atob(b64);
+    const len    = binary.length;
+    const buffer = new ArrayBuffer(len);
+    const view   = new DataView(buffer);
+    for (let i = 0; i < len; i++) {
+      view.setUint8(i, binary.charCodeAt(i));
     }
 
-    const baselineDb = median(this.samples);
-    const noiseFloorDb = percentile(this.samples, 10);
+    console.log('weightSpecs:', weightSpecs.length);
+    console.log('buffer:', len, 'bytes');
+
+    // custom IOHandler ที่ return buffer โดยตรง
+    const ioHandler = {
+      load: async () => ({
+        modelTopology: modelJson.modelTopology,
+        weightSpecs,
+        weightData:    buffer,
+        format:        modelJson.format      ?? 'graph-model',
+        generatedBy:   modelJson.generatedBy ?? '',
+        convertedBy:   modelJson.convertedBy ?? '',
+        signature:     modelJson.signature   ?? null,
+      }),
+    };
+
+    _model      = await tf.loadGraphModel(ioHandler);
+    _modelReady = true;
+    console.log('✅ โหลด model สำเร็จ');
+    return true;
+  } catch (err) {
+    console.error('❌ โหลด model ไม่สำเร็จ:', err.message);
+    console.error('Stack:', err.stack?.slice(0, 500));
+    return false;
+  }
+}
+
+// ============================================================
+// Log-Mel Spectrogram (pure JS)
+// ============================================================
+function hannWindow(n) {
+  return 0.5 * (1 - Math.cos((2 * Math.PI * n) / (N_FFT - 1)));
+}
+
+function computePowerSpectrum(frame) {
+  const N    = frame.length;
+  const half = Math.floor(N / 2) + 1;
+  const power = new Float32Array(half);
+
+  for (let k = 0; k < half; k++) {
+    let re = 0, im = 0;
+    for (let n = 0; n < N; n++) {
+      const angle = (2 * Math.PI * k * n) / N;
+      re += frame[n] * Math.cos(angle);
+      im -= frame[n] * Math.sin(angle);
+    }
+    power[k] = re * re + im * im;
+  }
+  return power;
+}
+
+function buildMelFilterbank(nMels, nFft, sr) {
+  const hzToMel  = (hz) => 2595 * Math.log10(1 + hz / 700);
+  const melToHz  = (mel) => 700 * (Math.pow(10, mel / 2595) - 1);
+  const melMin   = hzToMel(0);
+  const melMax   = hzToMel(sr / 2);
+  const melPts   = Array.from({ length: nMels + 2 }, (_, i) =>
+    melToHz(melMin + (i / (nMels + 1)) * (melMax - melMin))
+  );
+  const fftFreqs = Array.from({ length: Math.floor(nFft / 2) + 1 }, (_, i) =>
+    (i * sr) / nFft
+  );
+
+  return Array.from({ length: nMels }, (_, m) => {
+    const filter = new Float32Array(fftFreqs.length);
+    for (let k = 0; k < fftFreqs.length; k++) {
+      const f = fftFreqs[k];
+      if (f >= melPts[m] && f <= melPts[m + 1]) {
+        filter[k] = (f - melPts[m]) / (melPts[m + 1] - melPts[m]);
+      } else if (f > melPts[m + 1] && f <= melPts[m + 2]) {
+        filter[k] = (melPts[m + 2] - f) / (melPts[m + 2] - melPts[m + 1]);
+      }
+    }
+    return filter;
+  });
+}
+
+export function computeLogMelSpectrogram(audioSamples) {
+  const filters  = buildMelFilterbank(N_MELS, N_FFT, SAMPLE_RATE);
+  const nFrames  = Math.floor((audioSamples.length - N_FFT) / HOP_LENGTH) + 1;
+  const spectrogram = [];
+
+  for (let t = 0; t < nFrames; t++) {
+    const start = t * HOP_LENGTH;
+    const frame = new Float32Array(N_FFT);
+    for (let i = 0; i < N_FFT && start + i < audioSamples.length; i++) {
+      frame[i] = audioSamples[start + i] * hannWindow(i);
+    }
+
+    const power   = computePowerSpectrum(frame);
+    const melFrame = new Float32Array(N_MELS);
+    for (let m = 0; m < N_MELS; m++) {
+      let sum = 0;
+      for (let k = 0; k < power.length; k++) {
+        sum += filters[m][k] * power[k];
+      }
+      melFrame[m] = Math.log(Math.max(sum, 1e-10));
+    }
+    spectrogram.push(melFrame);
+  }
+  return spectrogram;
+}
+
+// ============================================================
+// AI Inference
+// ============================================================
+export async function inferAudio(audioSamples) {
+  if (!_modelReady || !_model) return null;
+
+  try {
+    const spec    = computeLogMelSpectrogram(audioSamples);
+    const nFrames = spec.length;
+
+    // สร้าง input [1, 1, N_MELS, nFrames]
+    const inputData = new Float32Array(N_MELS * nFrames);
+    for (let t = 0; t < nFrames; t++) {
+      for (let m = 0; m < N_MELS; m++) {
+        inputData[m * nFrames + t] = spec[t][m];
+      }
+    }
+
+    // Normalize [0, 1]
+    let min = Infinity, max = -Infinity;
+    for (const v of inputData) {
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    const range = max - min + 1e-8;
+    for (let i = 0; i < inputData.length; i++) {
+      inputData[i] = (inputData[i] - min) / range;
+    }
+
+    const inputTensor  = tf.tensor4d(inputData, [1, 1, N_MELS, nFrames]);
+    const outputTensor = _model.predict(inputTensor);
+    const logits       = await outputTensor.data();
+
+    inputTensor.dispose();
+    outputTensor.dispose();
+
+    // Softmax
+    const expLogits = Array.from(logits).map(Math.exp);
+    const sumExp    = expLogits.reduce((a, b) => a + b, 0);
+    const probs     = expLogits.map(v => v / sumExp);
 
     return {
-      baselineDb,
-      noiseFloorDb,
-      snoreThreshold: baselineDb + SNORE_OFFSET_DB,
-      loudThreshold: baselineDb + LOUD_OFFSET_DB,
-      silenceThreshold: baselineDb + SILENCE_OFFSET_DB,
-      sampleCount: this.samples.length,
-      reliable: true,
+      normal:    probs[CLASS_NORMAL],
+      snoring:   probs[CLASS_SNORING],
+      apnea:     probs[CLASS_APNEA],
+      predicted: probs.indexOf(Math.max(...probs)),
+    };
+  } catch (err) {
+    console.error('Inference error:', err);
+    return null;
+  }
+}
+
+// ============================================================
+// AHI Calculation
+// ============================================================
+export function calculateAHI(apneaCount, durationSeconds) {
+  if (durationSeconds <= 0) return 0;
+  const hours = durationSeconds / 3600;
+  return Math.round((apneaCount / hours) * 10) / 10;
+}
+
+export function classifyRisk(ahi) {
+  const num = Number(ahi);
+  if (num < AHI_NORMAL)   return { label: 'ปกติ',    color: '#4F9D69' };
+  if (num < AHI_MILD)     return { label: 'เล็กน้อย', color: '#D6A23C' };
+  if (num < AHI_MODERATE) return { label: 'ปานกลาง', color: '#D17A3D' };
+  return                          { label: 'รุนแรง',  color: '#C1564E' };
+}
+
+// ============================================================
+// DSP Fallback — ใช้เมื่อ AI model โหลดไม่ได้
+// ============================================================
+const CALIBRATION_DURATION = 8;
+
+export class CalibrationEngine {
+  constructor() {
+    this._samples   = [];
+    this._startTime = Date.now();
+  }
+
+  addSample(db) { this._samples.push(db); }
+
+  progress() {
+    const elapsed = (Date.now() - this._startTime) / 1000;
+    return Math.min(elapsed / CALIBRATION_DURATION, 1.0);
+  }
+
+  isDone() { return this.progress() >= 1.0; }
+
+  finalize() {
+    const sorted = [...this._samples].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)] ?? -50;
+    const p20    = sorted[Math.floor(sorted.length * 0.2)] ?? median;
+    return {
+      baseline:         median,
+      noiseFloor:       p20,
+      snoreThreshold:   median + 12,
+      loudThreshold:    median + 20,
+      silenceThreshold: median + 4,
     };
   }
 }
 
-/**
- * ============================================================
- * OSADetector
- * State machine วิเคราะห์เสียงแบบ real-time ระหว่างการบันทึก
- * เรียก .addSample(db, timestamp) ทุกครั้งที่มีค่า metering ใหม่
- * เมื่อพบ pattern ที่เข้าเกณฑ์ จะ trigger callback onEvent(event)
- * ============================================================
- */
 export class OSADetector {
-  /**
-   * @param {object} calibration - ผลลัพธ์จาก CalibrationEngine.finalize()
-   * @param {function} onEvent - callback เมื่อพบ event ใหม่ ({type, msg, time, confidence})
-   */
   constructor(calibration, onEvent) {
-    this.calibration = calibration;
-    this.onEvent = onEvent;
-
-    // rolling window ของ sample ล่าสุด: { db, t }
-    this.window = [];
-
-    // สถานะปัจจุบันของ state machine
-    // 'quiet' | 'loud' | 'silent_gap'
-    this.state = 'quiet';
-    this.stateStartTime = Date.now();
-    this.loudPeakDb = MIN_VALID_DB;
-    this.loudDurationBeforeSilence = 0;
-
-    // กันการแจ้งเตือนซ้ำในช่วงเวลาใกล้กัน
-    this.lastEventTime = 0;
-    this.MIN_EVENT_GAP_MS = 2000;
+    this._cal       = calibration;
+    this._onEvent   = onEvent;
+    this._state     = 'QUIET';
+    this._loudStart      = null;
+    this._silentStart    = null;
+    this._loudBeforeSilence = 0;
+    this._startTime = Date.now();
   }
 
-  /**
-   * ป้อนค่า dB ใหม่เข้า detector
-   * @param {number} db - ค่า metering (dBFS, มักเป็นค่าลบ เช่น -40)
-   */
+  _now() { return (Date.now() - this._startTime) / 1000; }
+
+  _formatTime(sec) {
+    const absTime = new Date(this._startTime + sec * 1000);
+    const h = String(absTime.getHours()).padStart(2, '0');
+    const m = String(absTime.getMinutes()).padStart(2, '0');
+    const s = String(absTime.getSeconds()).padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  }
+
   addSample(db) {
-    const now = Date.now();
-    if (typeof db !== 'number' || db <= MIN_VALID_DB) return;
+    const { snoreThreshold, loudThreshold, silenceThreshold } = this._cal;
+    const t = this._now();
 
-    this.window.push({ db, t: now });
-    if (this.window.length > ROLLING_WINDOW_SIZE) this.window.shift();
-
-    this._updateStateMachine(db, now);
-  }
-
-  _updateStateMachine(db, now) {
-    const { snoreThreshold, loudThreshold, silenceThreshold } = this.calibration;
-    const isLoud = db >= snoreThreshold;
-    const isSilent = db <= silenceThreshold;
-
-    switch (this.state) {
-      case 'quiet': {
-        if (isLoud) {
-          this.state = 'loud';
-          this.stateStartTime = now;
-          this.loudPeakDb = db;
+    if (db >= loudThreshold) {
+      if (this._state === 'SILENT_GAP') {
+        const silentDuration = t - (this._silentStart ?? t);
+        if (silentDuration >= 8 && this._loudBeforeSilence >= 3) {
+          this._onEvent({
+            type: 'apnea',
+            time: this._formatTime(this._silentStart),
+            msg:  `⚠️ หยุดหายใจ ${silentDuration.toFixed(0)}วิ`,
+          });
         }
-        break;
+      }
+      if (this._state !== 'LOUD') this._loudStart = t;
+      this._state       = 'LOUD';
+      this._silentStart = null;
+
+    } else if (db < silenceThreshold) {
+      if (this._state === 'LOUD') {
+        this._loudBeforeSilence = t - (this._loudStart ?? t);
+        this._silentStart       = t;
+        this._state             = 'SILENT_GAP';
       }
 
-      case 'loud': {
-        this.loudPeakDb = Math.max(this.loudPeakDb, db);
-        const loudDuration = (now - this.stateStartTime) / 1000;
-
-        if (isSilent) {
-          // เสียงดังเพิ่งหยุดกะทันหัน -> อาจเป็นจุดเริ่ม apnea หรือแค่ขยับตัว/กรนจบ
-          this.loudDurationBeforeSilence = loudDuration;
-          this.state = 'silent_gap';
-          this.stateStartTime = now;
-        } else if (!isLoud) {
-          // เสียงค่อย ๆ ลดลงแต่ยังไม่เงียบสนิท -> จบ episode ปกติ
-          this._resolveLoudEpisode(loudDuration, now);
-          this.state = 'quiet';
-        }
-        // ถ้ายัง isLoud อยู่ -> คงสถานะ 'loud' ต่อไป (กำลังกรน/เสียงดังต่อเนื่อง)
-        break;
+    } else if (db >= snoreThreshold) {
+      if (this._state === 'QUIET') {
+        this._loudStart = t;
+        this._state     = 'LOUD';
       }
-
-      case 'silent_gap': {
-        const silentDuration = (now - this.stateStartTime) / 1000;
-
-        if (isLoud) {
-          // เสียงดังกลับมาหลังเงียบ -> ตรวจว่าเข้าเกณฑ์ apnea หรือไม่
-          this._evaluateApneaCandidate(silentDuration, now);
-          // เริ่ม episode ดังใหม่
-          this.state = 'loud';
-          this.stateStartTime = now;
-          this.loudPeakDb = db;
-        } else if (silentDuration > APNEA_SILENCE_MIN_S * 1.5) {
-          // เงียบนานเกินไปโดยไม่มีเสียงดังตามมา -> อาจเป็นแค่ตื่น/หยุดกรนจริง ๆ
-          // ไม่ trigger apnea (ต้องมีเสียงดัง/หอบตามมาถึงจะถือว่าเป็น apnea pattern)
-          this.state = 'quiet';
-        }
-        break;
+      if (this._state === 'SILENT_GAP') {
+        this._state       = 'QUIET';
+        this._silentStart = null;
       }
+      if (this._state === 'LOUD') {
+        const loudDuration = t - (this._loudStart ?? t);
+        if (loudDuration >= 1.5) {
+          this._onEvent({
+            type: 'snore',
+            time: this._formatTime(this._loudStart),
+            msg:  '🔊 เสียงกรน',
+          });
+          this._loudStart = t;
+        }
+      }
+    } else {
+      if (this._state !== 'SILENT_GAP') this._state = 'QUIET';
     }
   }
 
-  /** จบ episode เสียงดังโดยไม่มีช่วงเงียบตามมา -> จัดเป็นกรน หรือ ขยับตัว */
-  _resolveLoudEpisode(durationS, now) {
-    if (durationS >= SNORE_MIN_DURATION_S) {
-      const confidence = Math.min(0.95, 0.6 + (durationS / 10) * 0.3);
-      this._emit('snore', `เสียงกรน ${(confidence * 100).toFixed(0)}%`, now, confidence);
-    } else if (durationS <= MOVEMENT_MAX_DURATION_S) {
-      this._emit('movement', 'ขยับตัว', now, 0.7);
-    }
-    // duration ระหว่าง MOVEMENT_MAX กับ SNORE_MIN ถือว่าไม่ชัดเจนพอ -> ไม่บันทึก (ลด false positive)
-  }
-
-  /** ประเมินว่าช่วงเงียบที่ตามมาด้วยเสียงดังเข้าเกณฑ์ apnea หรือไม่ */
-  _evaluateApneaCandidate(silentDurationS, now) {
-    const hadEnoughLoudBefore = this.loudDurationBeforeSilence >= APNEA_PRECEDING_LOUD_MIN_S;
-    const hadEnoughSilence = silentDurationS >= APNEA_SILENCE_MIN_S;
-
-    if (hadEnoughLoudBefore && hadEnoughSilence) {
-      // คำนวณ confidence จากความยาวของช่วงเงียบ + ความดังของเสียงก่อนเงียบ
-      const silenceFactor = Math.min(1, silentDurationS / (APNEA_SILENCE_MIN_S * 2));
-      const loudnessFactor = Math.min(
-        1,
-        Math.max(0, (this.loudPeakDb - this.calibration.snoreThreshold) / 15)
-      );
-      const confidence = Math.min(0.97, 0.55 + silenceFactor * 0.25 + loudnessFactor * 0.2);
-
-      this._emit(
-        'apnea',
-        `⚠️ หยุดหายใจ ${(confidence * 100).toFixed(0)}%`,
-        now,
-        confidence
-      );
-    } else if (this.loudDurationBeforeSilence >= SNORE_MIN_DURATION_S) {
-      // มีเสียงดังพอที่จะนับเป็นกรน แต่ช่วงเงียบไม่นานพอจะเป็น apnea
-      const confidence = 0.65;
-      this._emit('snore', `เสียงกรน ${(confidence * 100).toFixed(0)}%`, now, confidence);
-    }
-  }
-
-  _emit(type, msg, now, confidence) {
-    if (now - this.lastEventTime < this.MIN_EVENT_GAP_MS) return; // กันแจ้งซ้ำถี่เกินไป
-    this.lastEventTime = now;
-
-    const time = new Date(now).toLocaleTimeString('th-TH');
-    const event = { type, msg, time, confidence, timestamp: now };
-
-    if (typeof this.onEvent === 'function') {
-      this.onEvent(event);
-    }
-  }
-
-  /**
-   * เรียกตอนหยุดบันทึก เพื่อ flush episode ที่ค้างอยู่ใน state 'loud'
-   * (ป้องกันกรณีอัดเสียงจบขณะกำลังกรน/เสียงดังพอดี)
-   */
-  flush() {
-    if (this.state === 'loud') {
-      const durationS = (Date.now() - this.stateStartTime) / 1000;
-      this._resolveLoudEpisode(durationS, Date.now());
-    }
-  }
+  flush() {}
 }
-
-/**
- * ============================================================
- * Utility: คำนวณ AHI จากจำนวน apnea events และระยะเวลานอน (วินาที)
- * ============================================================
- */
-export function calculateAHI(apneaCount, sleepDurationSeconds) {
-  const hours = Math.max(sleepDurationSeconds / 3600, 0.1); // กัน /0
-  return Number((apneaCount / hours).toFixed(1));
-}
-
-/**
- * ============================================================
- * Utility: แปลงค่า AHI เป็นระดับความเสี่ยง (ใช้ร่วมกับ ResultScreen.js)
- * ============================================================
- */
-export function classifyRisk(ahi) {
-  const v = Number(ahi);
-  if (v < 5) return { label: 'ปกติ', color: '#22c55e' };
-  if (v < 15) return { label: 'เล็กน้อย', color: '#f59e0b' };
-  if (v < 30) return { label: 'ปานกลาง', color: '#f97316' };
-  return { label: 'รุนแรง', color: '#ef4444' };
-}
-
-export const SAMPLE_INTERVAL = SAMPLE_INTERVAL_MS;
-export const CALIBRATION_DURATION = CALIBRATION_DURATION_MS;
