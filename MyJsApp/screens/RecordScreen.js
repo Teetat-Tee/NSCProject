@@ -23,6 +23,7 @@ const PHASE = {
   IDLE:        'idle',
   CALIBRATING: 'calibrating',
   RECORDING:   'recording',
+  ANALYZING:   'analyzing',
 };
 
 const recordingOptions = {
@@ -56,7 +57,8 @@ export default function RecordScreen({ navigation }) {
 
   const isCalibrating = phase === PHASE.CALIBRATING;
   const isRecording   = phase === PHASE.RECORDING;
-  const isActive      = isCalibrating || isRecording;
+  const isAnalyzing   = phase === PHASE.ANALYZING;
+  const isActive      = isCalibrating || isRecording || isAnalyzing;
   const isNight       = isActive;
 
   // ---- Breath pulse animation ----
@@ -184,20 +186,68 @@ export default function RecordScreen({ navigation }) {
     timerRef.current = setInterval(() => setElapsed(p => p + 1), 1000);
   }
 
+  const SERVER_URL = 'https://osa-detect-server.onrender.com';
+
   async function stopRecording() {
     clearInterval(timerRef.current);
     if (detectorRef.current) detectorRef.current.flush();
 
+    let uri = null;
     try {
       if (audioRecorder?.isRecording) {
-        await audioRecorder.stop();
+        const result = await audioRecorder.stop();
+        uri = result?.uri ?? result ?? null;
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn('Stop recording error:', e);
+    }
 
-    const finalEvents   = [...eventsRef.current];
+    const dspEvents    = [...eventsRef.current];
     const finalDuration = elapsed;
+
+    // ถ้ามีไฟล์เสียง → ส่งไป AI server
+    if (uri) {
+      setPhase('analyzing');
+      try {
+        const formData = new FormData();
+        formData.append('audio', {
+          uri,
+          type: 'audio/m4a',
+          name: 'recording.m4a',
+        });
+
+        const response = await fetch(`${SERVER_URL}/analyze`, {
+          method: 'POST',
+          body:   formData,
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+
+        const data = await response.json();
+        console.log('AI result:', data);
+
+        if (data.success) {
+          setPhase(PHASE.IDLE);
+          navigation.navigate('Survey', {
+            duration: data.duration || finalDuration,
+            events:   data.events   || dspEvents,
+            engine:   'ai-server',
+            ahi:      data.ahi,
+            riskLabel: data.riskLabel,
+          });
+          return;
+        }
+      } catch (err) {
+        console.error('Server error:', err);
+      }
+    }
+
+    // fallback → DSP
     setPhase(PHASE.IDLE);
-    navigation.navigate('Survey', { duration: finalDuration, events: finalEvents });
+    navigation.navigate('Survey', {
+      duration: finalDuration,
+      events:   dspEvents,
+      engine:   'dsp',
+    });
   }
 
   function formatTime(s) {
@@ -241,7 +291,7 @@ export default function RecordScreen({ navigation }) {
           )}
 
           <View style={[styles.coreCircle, { backgroundColor: isRecording ? t.primary : (isNight ? night.surfaceMuted : colors.primarySoft) }]}>
-            <Text style={styles.coreEmoji}>{isCalibrating ? '🤫' : '🫁'}</Text>
+            <Text style={styles.coreEmoji}>{isCalibrating ? '🤫' : isAnalyzing ? '🧠' : '🫁'}</Text>
           </View>
 
           {isCalibrating ? (
@@ -251,6 +301,11 @@ export default function RecordScreen({ navigation }) {
               <View style={[styles.progressTrack, { backgroundColor: t.surfaceMuted }]}>
                 <View style={[styles.progressFill, { width: `${calibProgress * 100}%`, backgroundColor: t.primary }]} />
               </View>
+            </>
+          ) : isAnalyzing ? (
+            <>
+              <Text style={[styles.heroTitle, { color: t.inkMuted }]}>AI กำลังวิเคราะห์เสียง</Text>
+              <Text style={[styles.heroSub, { color: t.inkFaint }]}>กรุณารอสักครู่...</Text>
             </>
           ) : (
             <>
@@ -313,9 +368,13 @@ export default function RecordScreen({ navigation }) {
             ? <View style={[styles.calibratingBtn, { backgroundColor: t.surfaceMuted }]}>
                 <Text style={[styles.calibratingBtnText, { color: t.inkMuted }]}>กำลังตั้งค่า...</Text>
               </View>
-            : <TouchableOpacity style={[styles.stopBtn, { backgroundColor: t.primary }]} activeOpacity={0.85} onPress={stopRecording}>
-                <Text style={[styles.btnText, isNight && { color: night.bg }]}>⏹ หยุดและดูผล</Text>
-              </TouchableOpacity>
+            : isAnalyzing
+              ? <View style={[styles.calibratingBtn, { backgroundColor: t.surfaceMuted }]}>
+                  <Text style={[styles.calibratingBtnText, { color: t.inkMuted }]}>🧠 AI กำลังวิเคราะห์...</Text>
+                </View>
+              : <TouchableOpacity style={[styles.stopBtn, { backgroundColor: t.primary }]} activeOpacity={0.85} onPress={stopRecording}>
+                  <Text style={[styles.btnText, isNight && { color: night.bg }]}>⏹ หยุดและดูผล</Text>
+                </TouchableOpacity>
         }
 
       </View>
