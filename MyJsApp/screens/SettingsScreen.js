@@ -130,41 +130,6 @@ export default function SettingsScreen({ navigation }) {
 
         <Text style={styles.sectionTitle}>การนอนหลับ</Text>
         <View style={styles.section}>
-
-          <View style={styles.row}>
-            <View style={styles.rowIcon}><Text>🔔</Text></View>
-            <View style={styles.rowContent}>
-              <Text style={styles.rowLabel}>ปลุกอัจฉริยะ</Text>
-              <Text style={styles.rowSub}>
-                {prefs.smartAlarmEnabled ? `${prefs.smartAlarmTime} · ยังไม่รองรับการปลุกจริง` : 'ปิดอยู่'}
-              </Text>
-            </View>
-            <Switch
-              value={prefs.smartAlarmEnabled}
-              onValueChange={toggleSmartAlarm}
-              trackColor={{ true: colors.primary, false: colors.border }}
-              thumbColor={colors.surface}
-            />
-          </View>
-
-          <View style={styles.divider} />
-
-          <TouchableOpacity
-            style={[styles.row, !prefs.smartAlarmEnabled && styles.rowDisabled]}
-            activeOpacity={0.7}
-            onPress={() => prefs.smartAlarmEnabled && setAlarmTimeModalVisible(true)}
-            disabled={!prefs.smartAlarmEnabled}
-          >
-            <View style={styles.rowIcon}><Text>⏰</Text></View>
-            <View style={styles.rowContent}>
-              <Text style={styles.rowLabel}>เวลาปลุก</Text>
-              <Text style={styles.rowSub}>{prefs.smartAlarmTime}</Text>
-            </View>
-            <Text style={styles.arrow}>›</Text>
-          </TouchableOpacity>
-
-          <View style={styles.divider} />
-
           <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={() => setSleepGoalModalVisible(true)}>
             <View style={styles.rowIcon}><Text>🌙</Text></View>
             <View style={styles.rowContent}>

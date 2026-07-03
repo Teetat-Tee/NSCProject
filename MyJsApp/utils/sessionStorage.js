@@ -1,166 +1,167 @@
 // ============================================================
-// sessionStorage.js — เก็บประวัติการนอนแต่ละคืนแบบถาวร
+// utils/sessionStorage.js — Sessions ผ่าน server API
+// มี offline cache ด้วย AsyncStorage เผื่อ server ไม่ตอบ
 // ============================================================
-//
-// ใช้ @react-native-async-storage/async-storage
-// เก็บข้อมูลย้อนหลังสูงสุด 90 วัน แล้วลบของเก่าทิ้งอัตโนมัติ
-//
-// โครงสร้าง session ที่เก็บ:
-// {
-//   id: string (timestamp-based unique id)
-//   date: string (YYYY-MM-DD ของคืนที่บันทึก)
-//   timestamp: number (เวลาบันทึกเสร็จ, ms)
-//   duration: number (วินาที)
-//   events: [{ type, msg, time, confidence?, timestamp? }]
-//   ahi: number
-//   riskLabel: string
-//   riskColor: string
-//   apneaCount, snoreCount, moveCount: number
-//   survey: { answers, wellnessPercent } | null
-// }
-// ============================================================
-
+import { apiFetch } from './apiClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { calculateAHI, classifyRisk } from './modelHelper';
 
-const STORAGE_KEY = 'osa_sessions_v1';
-const RETENTION_DAYS = 90;
+const CACHE_KEY    = 'osa_sessions_cache_v2';
+const CACHE_EXPIRE = 5 * 60 * 1000; // 5 นาที
 
-function todayDateString(ts = Date.now()) {
-  const d = new Date(ts);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
+// ============================================================
+// บันทึก session ใหม่
+// ============================================================
+export async function saveSession({ duration, events, survey }) {
+  const apneaCount = events.filter(e => e.type === 'apnea').length;
+  const snoreCount = events.filter(e => e.type === 'snore').length;
+  const moveCount  = events.filter(e => e.type === 'movement').length;
+  const ahi        = calculateAHI(apneaCount, duration);
+  const risk       = classifyRisk(ahi);
+  const today      = new Date().toISOString().split('T')[0];
 
-/**
- * อ่าน session ทั้งหมดจาก storage (เรียงจากใหม่ -> เก่า)
- * และทำ auto-cleanup ลบของเก่าเกิน 90 วันทิ้งไปในตัว
- */
-export async function getAllSessions() {
-  try {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-
-    let sessions = JSON.parse(raw);
-    if (!Array.isArray(sessions)) return [];
-
-    const cutoff = Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000;
-    const before = sessions.length;
-    sessions = sessions.filter((s) => s.timestamp >= cutoff);
-
-    // ถ้ามีของถูกลบออกไป ให้เขียนกลับเพื่อ sync storage ให้ตรงกับสิ่งที่ใช้จริง
-    if (sessions.length !== before) {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
-    }
-
-    return sessions.sort((a, b) => b.timestamp - a.timestamp);
-  } catch (e) {
-    console.error('getAllSessions error:', e);
-    return [];
-  }
-}
-
-/**
- * บันทึก session ใหม่ลง storage
- * @param {object} params - { duration, events, survey }
- * @returns {object} session ที่บันทึกสำเร็จ (มี id แล้ว)
- */
-export async function saveSession({ duration, events, survey = null }) {
-  const apneaCount = events.filter((e) => e.type === 'apnea').length;
-  const snoreCount = events.filter((e) => e.type === 'snore').length;
-  const moveCount = events.filter((e) => e.type === 'movement').length;
-
-  const ahi = calculateAHI(apneaCount, duration);
-  const risk = classifyRisk(ahi);
-
-  const now = Date.now();
-  const session = {
-    id: `session_${now}`,
-    date: todayDateString(now),
-    timestamp: now,
-    duration,
-    events,
-    ahi,
-    riskLabel: risk.label,
-    riskColor: risk.color,
+  const payload = {
+    date:        today,
+    duration:    duration,
+    ahi:         ahi,
+    riskLabel:   risk.label,
     apneaCount,
     snoreCount,
     moveCount,
-    survey,
+    engine:      'dsp',
+    wellnessPct: survey?.wellnessPercent ?? 0,
+    events:      events,
+    survey:      survey,
   };
 
   try {
-    const existing = await getAllSessions();
-    const updated = [session, ...existing];
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    return session;
-  } catch (e) {
-    console.error('saveSession error:', e);
-    throw e;
+    const data = await apiFetch('/sessions', {
+      method: 'POST',
+      body:   JSON.stringify(payload),
+    });
+
+    // invalidate cache
+    await AsyncStorage.removeItem(CACHE_KEY);
+
+    return { id: data.sessionId, ...payload };
+  } catch (err) {
+    console.warn('saveSession server error:', err.message, '— saving locally');
+
+    // fallback: บันทึกใน AsyncStorage
+    const local = await getLocalSessions();
+    const id    = `local_${Date.now()}`;
+    local.unshift({ id, ...payload, timestamp: Date.now() });
+    await AsyncStorage.setItem('osa_local_sessions', JSON.stringify(local));
+    return { id, ...payload };
   }
 }
 
-/** ดึง session ตาม id */
-export async function getSessionById(id) {
-  const sessions = await getAllSessions();
-  return sessions.find((s) => s.id === id) || null;
+// ============================================================
+// ดึง sessions ทั้งหมด
+// ============================================================
+async function fetchSessions() {
+  // เช็ค cache ก่อน
+  const cached = await AsyncStorage.getItem(CACHE_KEY);
+  if (cached) {
+    const { data, timestamp } = JSON.parse(cached);
+    if (Date.now() - timestamp < CACHE_EXPIRE) return data;
+  }
+
+  const result   = await apiFetch('/sessions');
+  const sessions = (result.sessions || []).map(normalizeSession);
+
+  await AsyncStorage.setItem(CACHE_KEY, JSON.stringify({
+    data: sessions, timestamp: Date.now()
+  }));
+
+  return sessions;
 }
 
-/** ดึง session ล่าสุด (สำหรับหน้า Summary แบบ "วันนี้/คืนล่าสุด") */
+function normalizeSession(s) {
+  return {
+    id:          String(s.id),
+    date:        s.date,
+    duration:    s.duration_sec,
+    ahi:         Number(s.ahi),
+    riskLabel:   s.risk_label,
+    apneaCount:  s.apnea_count,
+    snoreCount:  s.snore_count,
+    moveCount:   s.move_count,
+    engine:      s.engine,
+    wellnessPct: s.wellness_pct,
+    events:      Array.isArray(s.events) ? s.events.filter(Boolean).map(e => ({
+      type:      e.type,
+      time:      e.time_str,
+      timestamp: e.timestamp,
+      msg:       e.msg,
+      confidence:e.confidence,
+    })) : [],
+    timestamp:   new Date(s.created_at).getTime(),
+    survey:      s.wellness_pct ? { wellnessPercent: s.wellness_pct } : null,
+  };
+}
+
+async function getLocalSessions() {
+  try {
+    const raw = await AsyncStorage.getItem('osa_local_sessions');
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+// ============================================================
+// Public API (ตรงกับ interface เดิมที่ทุก screen ใช้)
+// ============================================================
+export async function getAllSessions() {
+  try {
+    return await fetchSessions();
+  } catch {
+    return getLocalSessions();
+  }
+}
+
 export async function getLatestSession() {
   const sessions = await getAllSessions();
-  return sessions[0] || null;
+  return sessions.length > 0 ? sessions[0] : null;
 }
 
-/** ดึง session ทั้งหมดของวันที่กำหนด (YYYY-MM-DD) */
-export async function getSessionsByDate(dateString) {
-  const sessions = await getAllSessions();
-  return sessions.filter((s) => s.date === dateString);
+export async function getSessionById(id) {
+  try {
+    if (String(id).startsWith('local_')) {
+      const local = await getLocalSessions();
+      return local.find(s => s.id === id) || null;
+    }
+    const data = await apiFetch(`/sessions/${id}`);
+    return normalizeSession(data.session);
+  } catch {
+    return null;
+  }
 }
 
-/** ดึง session ทั้งหมดภายในเดือนที่กำหนด (year, month: 1-12) */
 export async function getSessionsByMonth(year, month) {
   const sessions = await getAllSessions();
-  const prefix = `${year}-${String(month).padStart(2, '0')}`;
-  return sessions.filter((s) => s.date.startsWith(prefix));
+  return sessions.filter(s => {
+    const d = new Date(s.date + 'T00:00:00');
+    return d.getFullYear() === year && d.getMonth() + 1 === month;
+  });
 }
 
-/**
- * สรุปสถิติรวม (สำหรับ Settings: Nights / Avg Sleep / Streak)
- */
 export async function getOverallStats() {
-  const sessions = await getAllSessions();
-
-  if (sessions.length === 0) {
-    return { totalNights: 0, avgSleepHours: 0, streak: 0 };
+  try {
+    const data = await apiFetch('/sessions/stats');
+    return {
+      totalNights:    Number(data.stats.total_nights)    || 0,
+      avgSleepHours:  Number(data.stats.avg_sleep_hours) || 0,
+      streak:         Number(data.stats.streak)          || 0,
+    };
+  } catch {
+    // fallback: คำนวณจาก cache
+    const sessions = await getAllSessions();
+    if (sessions.length === 0) return { totalNights: 0, avgSleepHours: 0, streak: 0 };
+    const avg = sessions.reduce((s, x) => s + x.duration, 0) / sessions.length / 3600;
+    return {
+      totalNights:   sessions.length,
+      avgSleepHours: Math.round(avg * 10) / 10,
+      streak:        0,
+    };
   }
-
-  const totalNights = sessions.length;
-  const avgDuration = sessions.reduce((sum, s) => sum + s.duration, 0) / totalNights;
-  const avgSleepHours = Math.round((avgDuration / 3600) * 10) / 10;
-
-  // คำนวณ streak: นับจำนวนวันติดต่อกัน (นับจากวันล่าสุดย้อนหลัง) ที่มีการบันทึก
-  const uniqueDates = [...new Set(sessions.map((s) => s.date))].sort().reverse();
-  let streak = 0;
-  let cursor = new Date();
-  for (let i = 0; i < uniqueDates.length; i++) {
-    const expected = todayDateString(cursor.getTime());
-    if (uniqueDates[i] === expected) {
-      streak++;
-      cursor.setDate(cursor.getDate() - 1);
-    } else {
-      break;
-    }
-  }
-
-  return { totalNights, avgSleepHours, streak };
 }
-
-/** ลบ session ทั้งหมด (ใช้สำหรับ debug/reset) */
-export async function clearAllSessions() {
-  await AsyncStorage.removeItem(STORAGE_KEY);
-}
-
-export { todayDateString };

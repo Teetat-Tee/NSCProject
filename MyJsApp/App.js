@@ -1,64 +1,66 @@
 import React, { useContext } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
-import { Text, View, ActivityIndicator } from 'react-native';
-import HomeScreen from './screens/HomeScreen';
-import RecordScreen from './screens/RecordScreen';
-import ResultScreen from './screens/ResultScreen';
-import SurveyScreen from './screens/SurveyScreen';
-import SettingsScreen from './screens/SettingsScreen';
-import { AuthProvider, AuthContext } from './AuthContext';
-import LoginScreen from './screens/LoginScreen';
-import SignUpScreen from './screens/SignUpScreen';
-import HospitalScreen from './screens/HospitalScreen';
+import { View, ActivityIndicator } from 'react-native';
+import { Home, BarChart2, Hospital, Settings } from 'lucide-react-native';
+
+import HomeScreen         from './screens/HomeScreen';
+import RecordScreen       from './screens/RecordScreen';
+import ResultScreen       from './screens/ResultScreen';
+import SurveyScreen       from './screens/SurveyScreen';
+import SettingsScreen     from './screens/SettingsScreen';
+import LoginScreen        from './screens/LoginScreen';
+import SignUpScreen       from './screens/SignUpScreen';
+import HospitalScreen     from './screens/HospitalScreen';
 import ResultExportScreen from './screens/ResultExportScreen';
 import AccuracyTestScreen from './screens/AccuracyTestScreen';
-import SummaryScreen from './screens/SummaryScreen';
-import { colors, shadow } from './utils/theme';
-import ModelDebugScreen from './screens/ModelDebugScreen';
+import SummaryScreen      from './screens/SummaryScreen';
+import ModelDebugScreen   from './screens/ModelDebugScreen';
 
-const Tab = createBottomTabNavigator();
+import { AuthProvider, AuthContext } from './AuthContext';
+import { useTheme, radius } from './utils/theme';
+
+const Tab   = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
-// --- Auth Stack ---
 function AuthStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="Login"  component={LoginScreen} />
       <Stack.Screen name="SignUp" component={SignUpScreen} />
     </Stack.Navigator>
   );
 }
 
-// --- Home Stack (Record flow: Home → Record → Survey → Result → ResultExport) ---
 function HomeStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="HomeMain" component={HomeScreen} />
-      <Stack.Screen name="Record" component={RecordScreen} />
-      <Stack.Screen name="Survey" component={SurveyScreen} />
-      <Stack.Screen name="Result" component={ResultScreen} />
+      <Stack.Screen name="HomeMain"     component={HomeScreen} />
+      <Stack.Screen name="Record"       component={RecordScreen} />
+      <Stack.Screen name="Survey"       component={SurveyScreen} />
+      <Stack.Screen name="Result"       component={ResultScreen} />
       <Stack.Screen name="ResultExport" component={ResultExportScreen} />
       <Stack.Screen name="AccuracyTest" component={AccuracyTestScreen} />
-      <Stack.Screen name="ModelDebug" component={ModelDebugScreen} />
+      <Stack.Screen name="ModelDebug"   component={ModelDebugScreen} />
     </Stack.Navigator>
   );
 }
 
-// --- Summary Stack: หน้าสรุปผลใหม่ (รองรับ daily/monthly history) ---
 function SummaryStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="SummaryMain" component={SummaryScreen} />
+      <Stack.Screen name="SummaryMain"  component={SummaryScreen} />
       <Stack.Screen name="ResultExport" component={ResultExportScreen} />
+      <Stack.Screen name="Result"       component={ResultScreen} />
+      <Stack.Screen name="Record"       component={RecordScreen} />
     </Stack.Navigator>
   );
 }
 
-// --- Main App Navigator ---
 function AppNavigator() {
   const { isLoggedIn, authLoading } = useContext(AuthContext);
+  const { colors, isDark }          = useTheme();
 
   if (authLoading) {
     return (
@@ -68,64 +70,72 @@ function AppNavigator() {
     );
   }
 
+  const navTheme = isDark
+    ? { ...DarkTheme,    colors: { ...DarkTheme.colors,    background: colors.bg, card: colors.surface, border: colors.border } }
+    : { ...DefaultTheme, colors: { ...DefaultTheme.colors, background: colors.bg, card: colors.surface, border: colors.border } };
+
+  const floatTabBar = {
+    position:        'absolute',
+    bottom:          24,
+    left:            20,
+    right:           20,
+    height:          72,
+    borderRadius:    radius.xl,
+    backgroundColor: colors.tabBar,
+    borderTopWidth:  0,
+    paddingBottom:   10,
+    paddingTop:      4,
+    shadowColor:     '#000',
+    shadowOffset:    { width: 0, height: 8 },
+    shadowOpacity:   isDark ? 0.4 : 0.15,
+    shadowRadius:    20,
+    elevation:       16,
+  };
+
   return (
-    <NavigationContainer>
+    <NavigationContainer theme={navTheme}>
       {isLoggedIn ? (
         <Tab.Navigator
           id="RootTabs"
           screenOptions={{
-            headerShown: false,
-            tabBarStyle: {
-              backgroundColor: colors.surface,
-              borderTopColor: colors.border,
-              borderTopWidth: 1,
-              height: 64,
-              paddingBottom: 8,
-              paddingTop: 8,
-              ...shadow.card,
-            },
-            tabBarActiveTintColor: colors.primary,
-            tabBarInactiveTintColor: colors.inkFaint,
-            tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+            headerShown:             false,
+            tabBarStyle:             floatTabBar,
+            tabBarActiveTintColor:   colors.tabActive,
+            tabBarInactiveTintColor: colors.tabInactive,
+            tabBarLabelStyle:        { fontSize: 11, fontWeight: '600', marginTop: -2 },
+            tabBarItemStyle:         { paddingTop: 8 },
           }}
         >
-          {/* Home tab (contains Record flow inside its stack) */}
           <Tab.Screen
             name="Home"
             component={HomeStack}
             options={{
-              tabBarLabel: 'Home',
-              tabBarIcon: () => <Text style={{ fontSize: 20 }}>🏠</Text>,
+              tabBarLabel: 'หน้าหลัก',
+              tabBarIcon: ({ color, size }) => <Home color={color} size={size ?? 22} strokeWidth={2} />,
             }}
           />
-
-          {/* REMOVED: บันทึก/Record tab */}
-
-          {/* Summary tab — now wrapped in SummaryStack so export works */}
           <Tab.Screen
             name="Summary"
             component={SummaryStack}
             options={{
-              tabBarLabel: 'Summary',
-              tabBarIcon: () => <Text style={{ fontSize: 20 }}>📊</Text>,
+              tabBarLabel: 'สรุปผล',
+              tabBarIcon: ({ color, size }) => <BarChart2 color={color} size={size ?? 22} strokeWidth={2} />,
             }}
           />
-
-          <Tab.Screen
-            name="Settings"
-            component={SettingsScreen}
-            options={{
-              tabBarLabel: 'Settings',
-              tabBarIcon: () => <Text style={{ fontSize: 20 }}>⚙️</Text>,
-            }}
-          />
-
           <Tab.Screen
             name="โรงพยาบาล"
             component={HospitalScreen}
             options={{
-              tabBarLabel: 'Hospital',
-              tabBarIcon: () => <Text style={{ fontSize: 20 }}>🏥</Text>,
+              tabBarLabel: 'โรงพยาบาล',
+              tabBarIcon: ({ color, size }) => <Hospital color={color} size={size ?? 22} strokeWidth={2} />,
+            }}
+          />
+          <Tab.Screen
+            name="Settings"
+            component={SettingsScreen}
+            options={{
+              tabBarLabel: 'ตั้งค่า',
+              tabBarIcon: ({ color, size }) => <Settings color={color} size={size ?? 22} strokeWidth={2} />,
             }}
           />
         </Tab.Navigator>

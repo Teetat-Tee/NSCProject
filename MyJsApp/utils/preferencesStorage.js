@@ -1,35 +1,45 @@
 // ============================================================
-// preferencesStorage.js — เก็บค่าตั้งค่าผู้ใช้แบบถาวร
+// utils/preferencesStorage.js — Preferences ผ่าน server API
 // ============================================================
-// ใช้สำหรับ Settings screen: Smart Alarm (on/off + เวลา),
-// Sleep Goal (ชั่วโมง) — ปัจจุบันเป็นค่าที่ "เก็บไว้" เท่านั้น
-// ยังไม่มีฟีเจอร์ปลุกจริง (รอ implement การแจ้งเตือนในอนาคต)
-// ============================================================
-
+import { apiFetch } from './apiClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const PREFS_KEY = 'osa_preferences_v1';
+const LOCAL_KEY = 'osa_preferences_v2';
 
 const DEFAULT_PREFS = {
   smartAlarmEnabled: true,
-  smartAlarmTime: '06:30', // HH:mm
-  sleepGoalHours: 8,
+  smartAlarmTime:    '06:30',
+  sleepGoalHours:    8,
 };
 
 export async function getPreferences() {
   try {
-    const raw = await AsyncStorage.getItem(PREFS_KEY);
-    if (!raw) return { ...DEFAULT_PREFS };
-    return { ...DEFAULT_PREFS, ...JSON.parse(raw) };
-  } catch (e) {
-    console.error('getPreferences error:', e);
-    return { ...DEFAULT_PREFS };
+    const data = await apiFetch('/preferences');
+    const prefs = { ...DEFAULT_PREFS, ...data.preferences };
+    await AsyncStorage.setItem(LOCAL_KEY, JSON.stringify(prefs));
+    return prefs;
+  } catch {
+    // fallback: โหลดจาก local
+    const raw = await AsyncStorage.getItem(LOCAL_KEY);
+    return raw ? { ...DEFAULT_PREFS, ...JSON.parse(raw) } : { ...DEFAULT_PREFS };
   }
 }
 
 export async function updatePreferences(updates) {
   const current = await getPreferences();
-  const next = { ...current, ...updates };
-  await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(next));
+  const next    = { ...current, ...updates };
+
+  // บันทึก local ก่อนเสมอ (เร็วกว่า)
+  await AsyncStorage.setItem(LOCAL_KEY, JSON.stringify(next));
+
+  try {
+    await apiFetch('/preferences', {
+      method: 'PUT',
+      body:   JSON.stringify(next),
+    });
+  } catch (err) {
+    console.warn('updatePreferences server error:', err.message);
+  }
+
   return next;
 }
