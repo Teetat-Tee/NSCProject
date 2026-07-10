@@ -1,4 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, ScrollView, Linking, StatusBar } from 'react-native';
+import { Phone, Map, MapPin, Clock, Info, Lightbulb, Building2 } from 'lucide-react-native';
 import { useTheme, radius, shadow } from '../utils/theme';
 
 const HOSPITALS = [
@@ -20,8 +21,9 @@ export default function HospitalScreen() {
         <Text style={[styles.title, { color: colors.ink }]}>โรงพยาบาลใกล้เคียง</Text>
         <Text style={[styles.sub, { color: colors.inkMuted }]}>เชียงใหม่ — แนะนำสำหรับตรวจ OSA</Text>
 
+        {/* Tip */}
         <View style={[styles.tip, { backgroundColor: colors.riskNormalSoft, borderColor: colors.riskNormal + '40' }]}>
-          <Text style={{ fontSize: 16 }}>💡</Text>
+          <Lightbulb color={colors.riskNormal} size={18} strokeWidth={2} />
           <Text style={[styles.tipText, { color: colors.riskNormal }]}>
             หากผล AHI ≥ 15 ควรพบแพทย์เพื่อตรวจ PSG จริงที่โรงพยาบาล
           </Text>
@@ -30,21 +32,30 @@ export default function HospitalScreen() {
         {HOSPITALS.map((h, i) => (
           <View key={i} style={[styles.card, { backgroundColor: colors.surface, borderLeftColor: h.accent }, !isDark && shadow.card]}>
             <View style={styles.cardHeader}>
-              <View style={[styles.iconBox, { backgroundColor: h.accent + '20' }]}>
-                <Text style={{ fontSize: 24 }}>🏥</Text>
+              <View style={[styles.iconBox, { backgroundColor: h.accent + '18' }]}>
+                <Building2 color={h.accent} size={24} strokeWidth={1.8} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.hospitalName, { color: colors.ink }]}>{h.name}</Text>
-                <View style={[styles.typeBadge, { backgroundColor: h.typeColor + '20' }]}>
+                <View style={[styles.typeBadge, { backgroundColor: h.typeColor + '18' }]}>
                   <Text style={[styles.typeText, { color: h.typeColor }]}>{h.type}</Text>
                 </View>
               </View>
             </View>
 
             <View style={styles.details}>
-              <Text style={[styles.detail, { color: colors.inkMuted }]}>📍 {h.address}</Text>
-              <Text style={[styles.detail, { color: colors.inkMuted }]}>🕐 {h.hours}</Text>
-              <Text style={[styles.detail, { color: colors.inkMuted }]}>ℹ️ {h.info}</Text>
+              <View style={styles.detailRow}>
+                <MapPin color={colors.inkFaint} size={14} strokeWidth={2} />
+                <Text style={[styles.detail, { color: colors.inkMuted }]}>{h.address}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Clock color={colors.inkFaint} size={14} strokeWidth={2} />
+                <Text style={[styles.detail, { color: colors.inkMuted }]}>{h.hours}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Info color={colors.inkFaint} size={14} strokeWidth={2} />
+                <Text style={[styles.detail, { color: colors.inkMuted }]}>{h.info}</Text>
+              </View>
             </View>
 
             <View style={styles.buttons}>
@@ -53,14 +64,16 @@ export default function HospitalScreen() {
                 activeOpacity={0.8}
                 onPress={() => Linking.openURL(`tel:${h.phone}`)}
               >
-                <Text style={styles.callText}>📞 {h.phone.replace(/(\d{3})(\d{3})(\d{3})/, '$1-$2-$3')}</Text>
+                <Phone color="#fff" size={16} strokeWidth={2} />
+                <Text style={styles.callText}>{h.phone.replace(/(\d{3})(\d{3})(\d{3})/, '$1-$2-$3')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.mapBtn, { backgroundColor: colors.surfaceMuted }]}
                 activeOpacity={0.8}
-                onPress={() => Linking.openURL(`https://maps.google.com/?q=${encodeURIComponent(h.name + ' ' + h.address)}`)}
+                onPress={() => Linking.openURL(`https://maps.google.com/?q=${encodeURIComponent(h.name)}`)}
               >
-                <Text style={[styles.mapText, { color: colors.inkMuted }]}>🗺️ แผนที่</Text>
+                <Map color={colors.inkMuted} size={16} strokeWidth={2} />
+                <Text style={[styles.mapText, { color: colors.inkMuted }]}>แผนที่</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -79,17 +92,18 @@ const styles = StyleSheet.create({
   sub:    { fontSize: 13, marginBottom: 18 },
   tip:    { flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 14, borderRadius: radius.md, borderWidth: 1, marginBottom: 20 },
   tipText:{ flex: 1, fontSize: 13, lineHeight: 20, fontWeight: '500' },
-  card: { borderRadius: radius.lg, padding: 18, marginBottom: 16, borderLeftWidth: 4 },
+  card:   { borderRadius: radius.lg, padding: 18, marginBottom: 16, borderLeftWidth: 4 },
   cardHeader:{ flexDirection: 'row', gap: 14, alignItems: 'flex-start', marginBottom: 14 },
   iconBox:   { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   hospitalName:{ fontSize: 16, fontWeight: '700', marginBottom: 6, lineHeight: 22 },
   typeBadge: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 3, borderRadius: radius.pill },
   typeText:  { fontSize: 12, fontWeight: '600' },
-  details:   { gap: 6, marginBottom: 16 },
-  detail:    { fontSize: 13, lineHeight: 19 },
+  details:   { gap: 8, marginBottom: 16 },
+  detailRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  detail:    { flex: 1, fontSize: 13, lineHeight: 19 },
   buttons:   { flexDirection: 'row', gap: 10 },
-  callBtn:   { flex: 1, paddingVertical: 12, borderRadius: radius.lg, alignItems: 'center' },
+  callBtn:   { flex: 1, paddingVertical: 12, borderRadius: radius.lg, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 },
   callText:  { color: '#fff', fontWeight: '700', fontSize: 14 },
-  mapBtn:    { paddingHorizontal: 20, paddingVertical: 12, borderRadius: radius.lg, alignItems: 'center' },
+  mapBtn:    { paddingHorizontal: 20, paddingVertical: 12, borderRadius: radius.lg, alignItems: 'center', flexDirection: 'row', gap: 6 },
   mapText:   { fontWeight: '600', fontSize: 14 },
 });
