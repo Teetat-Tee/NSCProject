@@ -1,12 +1,7 @@
 // ============================================================
-// theme.js — Design tokens พร้อม Dark Mode
-// ใช้ useTheme() hook ในทุก screen แทนการ import colors ตรงๆ
+// theme.js — Light Mode Only
 // ============================================================
-import { useColorScheme } from 'react-native';
 
-// ============================================================
-// Light Mode Colors
-// ============================================================
 const light = {
   bg:           '#FAF8F4',
   surface:      '#FFFFFF',
@@ -37,52 +32,12 @@ const light = {
   tabInactive:  '#A4A29C',
 };
 
-// ============================================================
-// Dark Mode Colors
-// ============================================================
-const dark = {
-  bg:           '#0F0F12',
-  surface:      '#1C1C21',
-  surfaceMuted: '#26262D',
-  border:       '#35353D',
-  ink:          '#F0EFF4',
-  inkMuted:     '#9B9AA3',
-  inkFaint:     '#5C5B63',
-  onPrimary:    '#FFFFFF',
-  primary:      '#7BA3C8',
-  primarySoft:  '#1A2A38',
-  primaryDeep:  '#9DBFDB',
-  riskNormal:      '#5DBF7F',
-  riskNormalSoft:  '#0D2B18',
-  riskMild:        '#E0B050',
-  riskMildSoft:    '#2B2010',
-  riskModerate:    '#E08040',
-  riskModerateSoft:'#2B1A0D',
-  riskSevere:      '#D96B63',
-  riskSevereSoft:  '#2B1210',
-  apnea:    '#D96B63',
-  snore:    '#E0B050',
-  movement: '#7BA3C8',
-  shadow:   'rgba(0, 0, 0, 0.3)',
-  tabBar:       '#1C1C21',
-  tabBorder:    '#35353D',
-  tabActive:    '#7BA3C8',
-  tabInactive:  '#5C5B63',
-};
-
-// ============================================================
-// useTheme hook — ใช้ใน component
-// ============================================================
+// useTheme — always light
 export function useTheme() {
-  const scheme = useColorScheme();
-  const isDark  = scheme === 'dark';
-  return { colors: isDark ? dark : light, isDark };
+  return { colors: light, isDark: false };
 }
 
-// ============================================================
-// Static exports (สำหรับ StyleSheet.create ที่ต้องการค่าคงที่)
-// ============================================================
-export const colors = light; // default light (ใช้กับ StyleSheet.create)
+export const colors = light;
 
 export const radius = {
   sm:   12,
@@ -116,20 +71,18 @@ export const shadow = {
   },
 };
 
-export function riskTokens(label, isDark = false) {
-  const c = isDark ? dark : light;
+export function riskTokens(label) {
   switch (label) {
-    case 'ปกติ':    return { color: c.riskNormal,   soft: c.riskNormalSoft };
-    case 'เล็กน้อย': return { color: c.riskMild,     soft: c.riskMildSoft };
-    case 'ปานกลาง': return { color: c.riskModerate,  soft: c.riskModerateSoft };
-    case 'รุนแรง':  return { color: c.riskSevere,    soft: c.riskSevereSoft };
-    default:        return { color: c.primary,       soft: c.primarySoft };
+    case 'ปกติ':     return { color: light.riskNormal,   soft: light.riskNormalSoft };
+    case 'เล็กน้อย': return { color: light.riskMild,     soft: light.riskMildSoft };
+    case 'ปานกลาง':  return { color: light.riskModerate, soft: light.riskModerateSoft };
+    case 'รุนแรง':   return { color: light.riskSevere,   soft: light.riskSevereSoft };
+    default:         return { color: light.primary,      soft: light.primarySoft };
   }
 }
 
-export function eventColor(type, isDark = false) {
-  const c = isDark ? dark : light;
-  if (type === 'apnea')    return c.apnea;
-  if (type === 'snore')    return c.snore;
-  return c.movement;
+export function eventColor(type) {
+  if (type === 'apnea') return light.apnea;
+  if (type === 'snore') return light.snore;
+  return light.movement;
 }
