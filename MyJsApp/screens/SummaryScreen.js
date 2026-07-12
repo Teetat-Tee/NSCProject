@@ -6,7 +6,7 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import {
   Flame, ChevronLeft, ChevronRight,
-  AlertTriangle, Volume2, Smartphone, Bed, Clock,
+  AlertTriangle, Bed, Clock,
 } from 'lucide-react-native';
 import { useTheme, radius, shadow, riskTokens } from '../utils/theme';
 import { getAllSessions, getLatestSession, getOverallStats } from '../utils/sessionStorage';
@@ -29,16 +29,12 @@ export default function SummaryScreen({ navigation }) {
   async function loadData() {
     try {
       const [l, s, st] = await Promise.all([
-        getLatestSession(),
-        getAllSessions(),
-        getOverallStats(),
+        getLatestSession(), getAllSessions(), getOverallStats(),
       ]);
       setLatest(l);
       setSessions(s || []);
       setStats(st || { totalNights: 0, avgSleepHours: 0, streak: 0 });
-    } catch(e) {
-      console.error('loadData error:', e);
-    }
+    } catch(e) { console.error('loadData error:', e); }
   }
 
   useFocusEffect(useCallback(() => { loadData(); }, []));
@@ -64,21 +60,16 @@ export default function SummaryScreen({ navigation }) {
     return d.getFullYear() === viewYear && d.getMonth() === viewMonth;
   });
 
-  const riskColor = (label) => {
-    const t = riskTokens(label, isDark);
-    return t.color;
-  };
+  const riskColor = (label) => riskTokens(label, isDark).color;
 
   function formatDate(dateStr) {
     const d = new Date(dateStr);
     return `${DAYS_TH[d.getDay()]}ที่ ${d.getDate()} ${MONTHS_FULL_TH[d.getMonth()]}`;
   }
-
   function formatDateShort(dateStr) {
     const d = new Date(dateStr);
     return `${DAYS_TH[d.getDay()].slice(3, 5)}. ${d.getDate()} ${MONTHS_TH[d.getMonth()]}.`;
   }
-
   function formatDuration(sec) {
     const h = Math.floor(sec / 3600);
     const m = Math.floor((sec % 3600) / 60);
@@ -95,7 +86,6 @@ export default function SummaryScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.primary} />}
       >
-        {/* Header */}
         <View style={styles.header}>
           <View>
             <Text style={[styles.title, { color: c.ink }]}>สรุปผล</Text>
@@ -111,7 +101,6 @@ export default function SummaryScreen({ navigation }) {
           )}
         </View>
 
-        {/* Tab */}
         <View style={[styles.tabWrap, { backgroundColor: c.surfaceMuted }]}>
           {[['latest', 'คืนล่าสุด'], ['history', 'ประวัติ']].map(([key, label]) => (
             <TouchableOpacity
@@ -133,7 +122,6 @@ export default function SummaryScreen({ navigation }) {
             <>
               <Text style={[styles.dateLabel, { color: c.inkMuted }]}>{formatDate(latest.date)}</Text>
 
-              {/* AHI Card */}
               <View style={[styles.ahiCard, { backgroundColor: c.surface }, !isDark && shadow.card]}>
                 <View style={styles.ahiLeft}>
                   <Text style={[styles.ahiLabel, { color: c.inkFaint }]}>AHI</Text>
@@ -152,24 +140,24 @@ export default function SummaryScreen({ navigation }) {
                 </View>
               </View>
 
-              {/* Stats */}
+              {/* Stats — แค่ apnea เท่านั้น */}
               <View style={[styles.statsRow]}>
-                {[
-                  { Icon: AlertTriangle, color: c.apnea,    val: latest.apneaCount ?? 0, label: 'หยุดหายใจ' },
-                  { Icon: Volume2,       color: c.snore,    val: latest.snoreCount ?? 0, label: 'เสียงกรน' },
-                  { Icon: Smartphone,    color: c.movement, val: latest.moveCount  ?? 0, label: 'ขยับตัว' },
-                ].map((s, i) => (
-                  <View key={i} style={[styles.statCard, { backgroundColor: c.surface }, !isDark && shadow.card]}>
-                    <View style={[styles.statIcon, { backgroundColor: s.color + '18' }]}>
-                      <s.Icon color={s.color} size={18} strokeWidth={2} />
-                    </View>
-                    <Text style={[styles.statVal, { color: s.color }]}>{s.val}</Text>
-                    <Text style={[styles.statLabel, { color: c.inkFaint }]}>{s.label}</Text>
+                <View style={[styles.statCard, { backgroundColor: c.surface }, !isDark && shadow.card]}>
+                  <View style={[styles.statIcon, { backgroundColor: c.apnea + '18' }]}>
+                    <AlertTriangle color={c.apnea} size={18} strokeWidth={2} />
                   </View>
-                ))}
+                  <Text style={[styles.statVal, { color: c.apnea }]}>{latest.apneaCount ?? 0}</Text>
+                  <Text style={[styles.statLabel, { color: c.inkFaint }]}>หยุดหายใจ</Text>
+                </View>
+                <View style={[styles.statCard, { backgroundColor: c.surface }, !isDark && shadow.card]}>
+                  <View style={[styles.statIcon, { backgroundColor: c.primary + '18' }]}>
+                    <Clock color={c.primary} size={18} strokeWidth={2} />
+                  </View>
+                  <Text style={[styles.statVal, { color: c.primary }]}>{formatDuration(latest.duration || 0)}</Text>
+                  <Text style={[styles.statLabel, { color: c.inkFaint }]}>เวลานอน</Text>
+                </View>
               </View>
 
-              {/* Wellness */}
               {(latest.wellnessPct ?? 0) > 0 && (
                 <View style={[styles.wellCard, { backgroundColor: c.surface }, !isDark && shadow.card]}>
                   <Text style={[styles.wellTitle, { color: c.ink }]}>คะแนนความสดชื่นหลังตื่นนอน</Text>
@@ -180,34 +168,26 @@ export default function SummaryScreen({ navigation }) {
                 </View>
               )}
 
-              {/* Timeline */}
               <View style={[styles.timelineCard, { backgroundColor: c.surface }, !isDark && shadow.card]}>
                 <Text style={[styles.timelineTitle, { color: c.ink }]}>ไทม์ไลน์</Text>
                 {(latest.events ?? []).length === 0
                   ? <Text style={[styles.noEvent, { color: c.inkFaint }]}>ไม่มีเหตุการณ์ที่บันทึกไว้</Text>
-                  : (latest.events ?? []).slice(0, 10).map((ev, i) => {
-                      const evColor = ev.type === 'apnea' ? c.apnea : ev.type === 'snore' ? c.snore : c.movement;
-                      return (
-                        <View key={i} style={[styles.evRow, { borderLeftColor: evColor, backgroundColor: c.surfaceMuted }]}>
-                          <Text style={[styles.evTime, { color: c.inkFaint }]}>{ev.time ?? ev.time_str}</Text>
-                          <Text style={[styles.evMsg, { color: c.ink }]}>{ev.msg}</Text>
-                        </View>
-                      );
-                    })
+                  : (latest.events ?? []).slice(0, 10).map((ev, i) => (
+                      <View key={i} style={[styles.evRow, { borderLeftColor: ev.type === 'apnea' ? c.apnea : c.inkFaint, backgroundColor: c.surfaceMuted }]}>
+                        <Text style={[styles.evTime, { color: c.inkFaint }]}>{ev.time ?? ev.time_str}</Text>
+                        <Text style={[styles.evMsg, { color: c.ink }]}>{ev.msg}</Text>
+                      </View>
+                    ))
                 }
               </View>
 
-              {/* Buttons */}
               <TouchableOpacity
                 style={[styles.recordBtn, { backgroundColor: colors.primary, shadowColor: colors.primaryDeep }]}
                 activeOpacity={0.85}
                 onPress={() => navigation.navigate('ResultExport', {
-                  session: latest,
-                  duration: latest.duration,
-                  events: latest.events ?? [],
-                  ahi: latest.ahi,
-                  riskLabel: latest.riskLabel,
-                  wellnessPct: latest.wellnessPct ?? 0,
+                  session: latest, duration: latest.duration,
+                  events: latest.events ?? [], ahi: latest.ahi,
+                  riskLabel: latest.riskLabel, wellnessPct: latest.wellnessPct ?? 0,
                 })}
               >
                 <Text style={[styles.recordBtnText, { color: colors.onPrimary }]}>ส่งออกรายงาน PDF</Text>
@@ -218,10 +198,7 @@ export default function SummaryScreen({ navigation }) {
               <Bed color={c.inkFaint} size={48} strokeWidth={1.5} style={{ marginBottom: 12 }} />
               <Text style={[styles.emptyTitle, { color: c.ink }]}>ยังไม่มีข้อมูล</Text>
               <Text style={[styles.emptySub, { color: c.inkMuted }]}>เริ่มบันทึกการนอนคืนแรกของคุณ</Text>
-              <TouchableOpacity
-                style={[styles.recordBtn, { backgroundColor: c.primary, marginTop: 20 }]}
-                onPress={() => navigation.navigate('Record')}
-              >
+              <TouchableOpacity style={[styles.recordBtn, { backgroundColor: c.primary, marginTop: 20 }]} onPress={() => navigation.navigate('Record')}>
                 <Text style={[styles.recordBtnText, { color: c.onPrimary }]}>เริ่มบันทึก</Text>
               </TouchableOpacity>
             </View>
@@ -231,20 +208,16 @@ export default function SummaryScreen({ navigation }) {
         {/* ── History ── */}
         {tab === 'history' && (
           <>
-            {/* Month Picker */}
             <View style={[styles.monthPicker, { backgroundColor: c.surface }, !isDark && shadow.card]}>
               <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}>
                 <ChevronLeft color={c.primary} size={20} strokeWidth={2} />
               </TouchableOpacity>
-              <Text style={[styles.monthLabel, { color: c.ink }]}>
-                {MONTHS_FULL_TH[viewMonth]} {viewYear + 543}
-              </Text>
+              <Text style={[styles.monthLabel, { color: c.ink }]}>{MONTHS_FULL_TH[viewMonth]} {viewYear + 543}</Text>
               <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}>
                 <ChevronRight color={c.primary} size={20} strokeWidth={2} />
               </TouchableOpacity>
             </View>
 
-            {/* AHI Chart */}
             <View style={[styles.chartCard, { backgroundColor: c.surface }, !isDark && shadow.card]}>
               <Text style={[styles.chartTitle, { color: c.ink }]}>แนวโน้ม AHI รายคืน</Text>
               {monthSessions.length > 0 ? (
@@ -276,7 +249,6 @@ export default function SummaryScreen({ navigation }) {
               </View>
             </View>
 
-            {/* Session List */}
             <Text style={[styles.listTitle, { color: c.inkMuted }]}>บันทึกรายวัน ({monthSessions.length})</Text>
             {monthSessions.length === 0
               ? <Text style={[styles.noEvent, { color: c.inkFaint }]}>ไม่มีข้อมูลในเดือนนี้</Text>
@@ -298,9 +270,7 @@ export default function SummaryScreen({ navigation }) {
                           <Bed color={c.inkFaint} size={12} strokeWidth={2} />
                           <Text style={[styles.sessionMetaText, { color: c.inkFaint }]}>{formatDuration(s.duration || 0)}</Text>
                           <AlertTriangle color={c.apnea} size={12} strokeWidth={2} />
-                          <Text style={[styles.sessionMetaText, { color: c.inkFaint }]}>{s.apneaCount ?? 0}</Text>
-                          <Volume2 color={c.snore} size={12} strokeWidth={2} />
-                          <Text style={[styles.sessionMetaText, { color: c.inkFaint }]}>{s.snoreCount ?? 0}</Text>
+                          <Text style={[styles.sessionMetaText, { color: c.inkFaint }]}>{s.apneaCount ?? 0} หยุดหายใจ</Text>
                         </View>
                       </View>
                       <View style={styles.sessionRight}>
