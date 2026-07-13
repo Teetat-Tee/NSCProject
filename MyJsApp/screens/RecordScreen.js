@@ -170,6 +170,8 @@ export default function RecordScreen({ navigation }) {
         body: JSON.stringify({ audio_base64: b64, chunk_start: chunkStart }),
         signal: controller.signal,
       });
+      // ลบ b64 ออก memory หลังส่งแล้ว
+      // (ตัวแปร b64 จะถูก GC หลัง scope จบ)
       clearTimeout(tid);
       console.log('[CHUNK] status:', res.status);
 
@@ -285,10 +287,22 @@ export default function RecordScreen({ navigation }) {
       if (uri) await sendChunk(uri, chunkStartRef.current);
     } catch {}
 
-    const allEvents = [...eventsRef.current];
+    // รวม events ทั้ง session — ลบ duplicate (timestamp เดียวกัน)
+    const seen = new Set();
+    const allEvents = eventsRef.current.filter(ev => {
+      const key = `${ev.type}_${ev.timestamp}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    // คำนวณ AHI จาก total duration ทั้ง session
     const apnea     = allEvents.filter(e => e.type === 'apnea').length;
-    const ahi       = dur > 0 ? Math.round((apnea / (dur / 3600)) * 10) / 10 : 0;
+    const hours     = Math.max(dur / 3600, 1/60); // minimum 1 นาที
+    const ahi       = Math.round((apnea / hours) * 10) / 10;
     const riskLabel = ahi < 5 ? 'ปกติ' : ahi < 15 ? 'เล็กน้อย' : ahi < 30 ? 'ปานกลาง' : 'รุนแรง';
+
+    console.log('[RESULT] duration:', dur, 'apnea:', apnea, 'AHI:', ahi, 'risk:', riskLabel);
 
     setPhase(PHASE.IDLE);
     navigation.navigate('Survey', { duration: dur, events: allEvents, engine: 'ai-server', ahi, riskLabel });
