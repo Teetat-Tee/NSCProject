@@ -22,30 +22,24 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "อนุญาตให้ OSA Detect เข้าถึงไมโครโฟนเพื่อบันทึกเสียงขณะนอนหลับ",
-          "androidAudioForegroundService": {
-            "notificationTitle": "OSA Detect กำลังบันทึกเสียง",
-            "notificationBody": "แอปกำลังบันทึกเสียงขณะนอนหลับ กรุณาอย่าปิดแอป",
-            "notificationColor": "#C0392B"
-          }
+          "microphonePermission": "อนุญาตให้ OSA Detect เข้าถึงไมโครโฟนเพื่อบันทึกเสียงขณะนอนหลับ"
         }
       ],
-      "expo-asset",
-      [
-        "expo-keep-awake",
-        {}
-      ]
+      "expo-asset",       
     ],
     "extra": {
       "eas": {
         "projectId": "8efdb8a1-526e-4a4e-a04e-4df0df759424"
-      }
+      },
+      "expoConfig": {}
     },
     "ios": {
       "bundleIdentifier": "com.tee.osadetect",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio"
+        ]
       }
     }
   }
