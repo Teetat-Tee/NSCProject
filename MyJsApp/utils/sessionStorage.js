@@ -6,29 +6,47 @@ import { apiFetch } from './apiClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { calculateAHI, classifyRisk } from './modelHelper';
 
-const CACHE_KEY    = 'osa_sessions_cache_v2';
 const CACHE_EXPIRE = 5 * 60 * 1000; // 5 นาที
+
+// cache key รวม user email เพื่อแยกข้อมูลแต่ละ account
+async function getCacheKey() {
+  const raw = await AsyncStorage.getItem('osa_current_user');
+  const user = raw ? JSON.parse(raw) : null;
+  const email = user?.email || 'anonymous';
+  return `osa_sessions_cache_v2_${email}`;
+}
+
+// ============================================================
+// ล้าง cache ทั้งหมด (เรียกตอน logout)
+// ============================================================
+export async function clearSessionCache() {
+  const key = await getCacheKey();
+  await AsyncStorage.removeItem(key);
+  await AsyncStorage.removeItem('osa_local_sessions');
+}
 
 // ============================================================
 // บันทึก session ใหม่
 // ============================================================
-export async function saveSession({ duration, events, survey }) {
+export async function saveSession({ duration, events, survey, ahi, riskLabel, engine }) {
   const apneaCount = events.filter(e => e.type === 'apnea').length;
   const snoreCount = events.filter(e => e.type === 'snore').length;
   const moveCount  = events.filter(e => e.type === 'movement').length;
-  const ahi        = calculateAHI(apneaCount, duration);
-  const risk       = classifyRisk(ahi);
+
+  // ถ้า AI ส่ง ahi/riskLabel มาแล้วใช้เลย ไม่คำนวณใหม่
+  const finalAhi   = ahi ?? calculateAHI(apneaCount, duration);
+  const finalRisk  = riskLabel ?? classifyRisk(finalAhi).label;
   const today      = new Date().toISOString().split('T')[0];
 
   const payload = {
     date:        today,
     duration:    duration,
-    ahi:         ahi,
-    riskLabel:   risk.label,
+    ahi:         finalAhi,
+    riskLabel:   finalRisk,
     apneaCount,
     snoreCount,
     moveCount,
-    engine:      'dsp',
+    engine:      engine || 'ai-server',
     wellnessPct: survey?.wellnessPercent ?? 0,
     events:      events,
     survey:      survey,
@@ -40,14 +58,14 @@ export async function saveSession({ duration, events, survey }) {
       body:   JSON.stringify(payload),
     });
 
-    // invalidate cache
-    await AsyncStorage.removeItem(CACHE_KEY);
+    // invalidate cache ของ user นี้
+    const key = await getCacheKey();
+    await AsyncStorage.removeItem(key);
 
     return { id: data.sessionId, ...payload };
   } catch (err) {
     console.warn('saveSession server error:', err.message, '— saving locally');
 
-    // fallback: บันทึกใน AsyncStorage
     const local = await getLocalSessions();
     const id    = `local_${Date.now()}`;
     local.unshift({ id, ...payload, timestamp: Date.now() });
@@ -60,8 +78,10 @@ export async function saveSession({ duration, events, survey }) {
 // ดึง sessions ทั้งหมด
 // ============================================================
 async function fetchSessions() {
+  const key = await getCacheKey();
+
   // เช็ค cache ก่อน
-  const cached = await AsyncStorage.getItem(CACHE_KEY);
+  const cached = await AsyncStorage.getItem(key);
   if (cached) {
     const { data, timestamp } = JSON.parse(cached);
     if (Date.now() - timestamp < CACHE_EXPIRE) return data;
@@ -70,7 +90,7 @@ async function fetchSessions() {
   const result   = await apiFetch('/sessions');
   const sessions = (result.sessions || []).map(normalizeSession);
 
-  await AsyncStorage.setItem(CACHE_KEY, JSON.stringify({
+  await AsyncStorage.setItem(key, JSON.stringify({
     data: sessions, timestamp: Date.now()
   }));
 
@@ -109,7 +129,7 @@ async function getLocalSessions() {
 }
 
 // ============================================================
-// Public API (ตรงกับ interface เดิมที่ทุก screen ใช้)
+// Public API
 // ============================================================
 export async function getAllSessions() {
   try {
@@ -149,12 +169,11 @@ export async function getOverallStats() {
   try {
     const data = await apiFetch('/sessions/stats');
     return {
-      totalNights:    Number(data.stats.total_nights)    || 0,
-      avgSleepHours:  Number(data.stats.avg_sleep_hours) || 0,
-      streak:         Number(data.stats.streak)          || 0,
+      totalNights:   Number(data.stats.total_nights)    || 0,
+      avgSleepHours: Number(data.stats.avg_sleep_hours) || 0,
+      streak:        Number(data.stats.streak)          || 0,
     };
   } catch {
-    // fallback: คำนวณจาก cache
     const sessions = await getAllSessions();
     if (sessions.length === 0) return { totalNights: 0, avgSleepHours: 0, streak: 0 };
     const avg = sessions.reduce((s, x) => s + x.duration, 0) / sessions.length / 3600;

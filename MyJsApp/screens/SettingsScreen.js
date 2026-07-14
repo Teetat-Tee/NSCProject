@@ -159,12 +159,6 @@ export default function SettingsScreen({ navigation }) {
             onPress={() => setShowGoal(true)} last />
         </Section>
 
-        <Section title="เครื่องมือนักพัฒนา" colors={c} isDark={isDark}>
-          <Row colors={c} icon={<Stethoscope color={c.primary} size={18} strokeWidth={2} />}
-            label="ทดสอบความแม่นยำ" sub="วัด Precision / Recall ของระบบ DSP"
-            onPress={() => navigation.navigate('AccuracyTest')} last />
-        </Section>
-
         <Section title="เกี่ยวกับ" colors={c} isDark={isDark}>
           <Row colors={c} icon={<Info color={c.primary} size={18} strokeWidth={2} />}
             label="เกี่ยวกับ OSA Detect" sub="เวอร์ชัน 1.0.0"
@@ -183,32 +177,25 @@ export default function SettingsScreen({ navigation }) {
       </ScrollView>
 
       {/* Sleep Goal Modal */}
-      <Modal visible={showGoal} transparent animationType="fade" onRequestClose={() => setShowGoal(false)}>
-        <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setShowGoal(false)}>
-          <View style={[styles.picker, { backgroundColor: c.surface }]}>
-            <View style={styles.pickerHeader}>
-              <Text style={[styles.pickerTitle, { color: c.ink }]}>เป้าหมายการนอน</Text>
-              <TouchableOpacity onPress={() => setShowGoal(false)}>
-                <X color={c.inkFaint} size={20} strokeWidth={2} />
-              </TouchableOpacity>
-            </View>
-            {SLEEP_GOALS.map(h => (
-              <TouchableOpacity
-                key={h}
-                style={[styles.pickerRow, { borderBottomColor: c.border, borderBottomWidth: 1 },
-                  prefs.sleepGoalHours === h && { backgroundColor: c.primarySoft }]}
-                onPress={() => { setPref('sleepGoalHours', h); setShowGoal(false); }}
-              >
-                <Moon color={prefs.sleepGoalHours === h ? c.primary : c.inkFaint} size={16} strokeWidth={2} />
-                <Text style={[styles.pickerText, {
-                  color: prefs.sleepGoalHours === h ? c.primary : c.ink,
-                  fontWeight: prefs.sleepGoalHours === h ? '700' : '400',
-                }]}>{h} ชั่วโมง</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </TouchableOpacity>
-      </Modal>
+<Modal visible={showAbout} transparent animationType="fade" onRequestClose={() => setShowAbout(false)}>
+  <View style={styles.aboutOverlay}>
+    <View style={[styles.aboutCard, { backgroundColor: c.surface }]}>
+      <View style={styles.aboutHeader}>
+        <Info color={c.primary} size={28} strokeWidth={1.5} />
+        <Text style={[styles.aboutTitle, { color: c.ink }]}>OSA Detect</Text>
+        <Text style={[styles.aboutVer, { color: c.inkFaint }]}>เวอร์ชัน 1.0.0</Text>
+      </View>
+      <ScrollView style={styles.aboutScroll} showsVerticalScrollIndicator={false}>
+        <Text style={[styles.aboutLicense, { color: c.inkMuted }]}>
+          ซอฟต์แวร์นี้เป็นผลงานที่พัฒนาขึ้นโดย นายวรพล พงษ์ธนพิบูล, นายธีธัช ศุนวัต, นายกานตวิชญ์ ใจสิน จาก โรงเรียนปรินส์รอยแยลส์วิทยาลัย ภายใต้การดูแลของ อาจารย์โอบนิธิ เงินกลั่น ภายใต้โครงการ OSA-DETECT ซึ่งสนับสนุนโดย สำนักงานพัฒนาวิทยาศาสตร์และเทคโนโลยีแห่งชาติ{'\n\n'}โดยมีวัตถุประสงค์เพื่อส่งเสริมให้นักเรียนและนักศึกษาได้เรียนรู้และฝึกทักษะในการพัฒนาซอฟต์แวร์ ลิขสิทธิ์ของซอฟต์แวร์นี้จึงเป็นของผู้พัฒนา ซึ่งผู้พัฒนาได้อนุญาตให้สำนักงานพัฒนาวิทยาศาสตร์และเทคโนโลยีแห่งชาติเผยแพร่ซอฟต์แวร์นี้ตาม "ต้นฉบับ" โดยไม่มีการแก้ไขดัดแปลงใด ๆ ทั้งสิ้น ให้แก่บุคคลทั่วไปได้ใช้เพื่อประโยชน์ส่วนบุคคลหรือประโยชน์ทางการศึกษาที่ไม่มีวัตถุประสงค์ในเชิงพาณิชย์โดยไม่คิดค่าตอบแทนการใช้ซอฟต์แวร์{'\n\n'}ดังนั้น สำนักงานพัฒนาวิทยาศาสตร์และเทคโนโลยีแห่งชาติ จึงไม่มีหน้าที่ในการดูแล บำรุงรักษา จัดการอบรมการใช้งาน หรือพัฒนาประสิทธิภาพซอฟต์แวร์ รวมทั้งไม่รับรองความถูกต้องหรือประสิทธิภาพการทำงานของซอฟต์แวร์ ตลอดจนไม่รับประกันความเสียหายต่าง ๆ อันเกิดจากการใช้ซอฟต์แวร์นี้ทั้งสิ้น
+        </Text>
+      </ScrollView>
+      <TouchableOpacity style={[styles.aboutClose, { backgroundColor: c.primary }]} onPress={() => setShowAbout(false)}>
+        <Text style={{ color: c.onPrimary, fontWeight: '600' }}>ปิด</Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+</Modal>
 
       {/* About Modal */}
       <Modal visible={showAbout} transparent animationType="fade" onRequestClose={() => setShowAbout(false)}>
@@ -333,11 +320,15 @@ const styles = StyleSheet.create({
   pickerTitle:   { fontSize: 16, fontWeight: '700' },
   pickerRow:     { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, paddingHorizontal: 16 },
   pickerText:    { fontSize: 15, flex: 1 },
-  aboutCard:     { borderRadius: radius.xl, padding: 28, alignItems: 'center' },
-  aboutTitle:    { fontSize: 22, fontWeight: '800', marginBottom: 4 },
-  aboutVer:      { fontSize: 13, marginBottom: 16 },
+  aboutOverlay:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 },
+  aboutCard:     { borderRadius: radius.xl, padding: 24, maxHeight: '80%' },
+  aboutHeader:   { alignItems: 'center', marginBottom: 16, gap: 4 },
+  aboutTitle:    { fontSize: 20, fontWeight: '800', marginTop: 8 },
+  aboutVer:      { fontSize: 12 },
+  aboutScroll:   { maxHeight: 300, marginBottom: 16 },
+  aboutLicense:  { fontSize: 13, lineHeight: 20 },
   aboutBody:     { fontSize: 14, lineHeight: 22, textAlign: 'center', marginBottom: 24 },
-  aboutClose:    { paddingVertical: 12, paddingHorizontal: 32, borderRadius: radius.lg },
+  aboutClose:    { paddingVertical: 12, paddingHorizontal: 32, borderRadius: radius.lg, alignItems: 'center' },
   sheetOverlay:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   sheet:         { borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, maxHeight: '85%', paddingBottom: 40 },
   sheetHandle:   { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 12, marginBottom: 4 },

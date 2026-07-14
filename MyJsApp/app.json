@@ -25,7 +25,7 @@
           "microphonePermission": "อนุญาตให้ OSA Detect เข้าถึงไมโครโฟนเพื่อบันทึกเสียงขณะนอนหลับ"
         }
       ],
-      "expo-asset",       
+      "expo-asset"       
     ],
     "extra": {
       "eas": {
